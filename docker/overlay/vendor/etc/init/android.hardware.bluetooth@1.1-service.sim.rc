@@ -1,0 +1,7 @@
+# Overrides redroid's simulated Bluetooth HAL. On OrbStack it crash-loops ("Invalid address"),
+# which ANRs system_server until the Watchdog kills it. No Bluetooth needed here.
+service vendor.bluetooth-1-1 /vendor/bin/hw/android.hardware.bluetooth@1.1-service.sim
+    class hal
+    user bluetooth
+    group bluetooth
+    disabled

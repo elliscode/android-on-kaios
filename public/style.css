@@ -1,0 +1,36 @@
+/* Usable area is exactly 240x276 at the top-left. Nothing may exceed it. */
+* {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 240px;
+  height: 276px;
+  overflow: hidden;
+  background: #000;
+}
+
+#screen {
+  display: block;
+  width: 240px;
+  height: 276px;
+}
+
+/* Native text box, shown over the top of the screenshot while Android's keyboard is up. */
+#kb {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 240px;
+  height: 30px;
+  font-size: 16px;
+  background: #fff;
+  color: #000;
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}

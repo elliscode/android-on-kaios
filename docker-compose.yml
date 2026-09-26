@@ -1,0 +1,42 @@
+services:
+  # OrbStack's VM exposes /dev/binder* as root-only (0600). Docker --privileged copies
+  # those nodes into the container, and Android's non-root services can't open them.
+  # This one-shot job makes them world-accessible in the VM (resets on OrbStack restart).
+  binder-perms:
+    image: alpine
+    privileged: true
+    volumes:
+      - /dev:/hostdev
+    command: chmod 666 /hostdev/binder /hostdev/hwbinder /hostdev/vndbinder
+
+  android:
+    image: redroid-gapps:14
+    container_name: android
+    privileged: true
+    # No auto-restart: after an OrbStack/Mac restart the binder permissions are reset, and only
+    # `docker compose up -d` re-runs binder-perms first. Auto-starting Android would hang its boot.
+    restart: "no"
+    depends_on:
+      binder-perms:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:5555:5555"
+    volumes:
+      - android-data:/data
+      # OrbStack's kernel has no PSI, so lmkd exits at boot, and system_server then blocks on
+      # reconnecting to it until the Watchdog kills it. A fake in-kernel lowmemorykiller
+      # interface lets lmkd start in legacy mode. (It only writes the minfree/adj values here.)
+      - ./docker/sysmodule:/sys/module
+    # 960x1104 = exactly 4x the KaiOS usable area (240x276). Keep it an integer multiple.
+    # dpi scales with it (120 per 1x) so Android's layout stays the same, just sharper.
+    # The client reads the scale from the frame size, so nothing else needs changing.
+    command:
+      - androidboot.redroid_width=960
+      - androidboot.redroid_height=1104
+      - androidboot.redroid_dpi=480
+      - androidboot.redroid_gpu_mode=guest
+
+volumes:
+  # All of Android's /data: Google login, installed apps, app data. Survives restarts, recreates
+  # and image rebuilds. Only `docker compose down -v` or `docker volume rm` deletes it.
+  android-data:

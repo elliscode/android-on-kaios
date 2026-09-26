@@ -1,0 +1,8 @@
+node_modules/
+apks/*
+!apks/.gitkeep
+docker/mindthegapps/
+docker/mindthegapps.zip
+.DS_Store
+docker/ADBKeyboard.apk
+backups/
