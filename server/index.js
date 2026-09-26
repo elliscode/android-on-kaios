@@ -204,6 +204,38 @@ app.post('/location', async (req, res) => {
   }
 });
 
+// Photo from the phone's camera (key 9): normalised to JPEG and saved to Android's camera folder,
+// so it can be attached from the gallery in any app.
+app.post('/photo', express.raw({ type: 'image/*', limit: '25mb' }), async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'image body required' });
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const name = 'KaiOS_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '_' +
+    pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '.jpg';
+  const tmp = path.join(os.tmpdir(), 'android-on-kaios-' + process.pid + '-' + name);
+  try {
+    // rotate() applies the EXIF orientation; re-encoding also rejects anything that isn't an image.
+    // withMetadata() keeps EXIF such as the time taken (orientation is reset after rotating).
+    await sharp(req.body).rotate().withMetadata().jpeg({ quality: 90 }).toFile(tmp);
+    await adb.pushMedia(tmp, '/sdcard/DCIM/Camera/' + name);
+    res.json({ name });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  } finally {
+    fs.unlink(tmp, () => {});
+  }
+});
+
+app.post('/notifications', async (req, res) => {
+  try {
+    const open = await adb.toggleNotifications();
+    recaptureSoon();
+    res.json({ open });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 app.post('/text', async (req, res) => {
   const text = req.body && typeof req.body.text === 'string' ? req.body.text : '';
   const replace = !!(req.body && req.body.replace);

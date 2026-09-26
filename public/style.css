@@ -49,3 +49,8 @@ body {
   background: #222;
   color: #fff;
 }
+
+/* Opened by key 9 to take a photo; never shown. */
+#photo {
+  display: none;
+}

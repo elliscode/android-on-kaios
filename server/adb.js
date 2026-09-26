@@ -76,6 +76,23 @@ function swipe(x1, y1, x2, y2, ms) {
   return adb(['shell', 'input', 'swipe', String(x1), String(y1), String(x2), String(y2), String(ms)]);
 }
 
+// Copies a local file into Android's shared storage and indexes it, so it shows up in the gallery
+// and in apps' photo pickers.
+async function pushMedia(localPath, devicePath) {
+  await adb(['push', localPath, devicePath], { timeout: 60000 });
+  // Scan now so the gallery gets its size and date immediately (not just the file name).
+  await adb(['shell', 'content', 'call', '--uri', 'content://media', '--method', 'scan_file',
+    '--arg', devicePath.replace(/^\/sdcard\//, '/storage/emulated/0/')]);
+}
+
+// Opens Android's notification shade, or closes it if it's already open.
+async function toggleNotifications() {
+  const out = (await adb(['shell', 'dumpsys', 'window', 'displays'])).toString();
+  const open = /mCurrentFocus=Window\{[^}]*NotificationShade/.test(out);
+  await adb(['shell', 'cmd', 'statusbar', open ? 'collapse' : 'expand-notifications']);
+  return !open;
+}
+
 function keyevent(code) {
   return adb(['shell', 'input', 'keyevent', String(code)]);
 }
@@ -141,4 +158,4 @@ async function keyboardShown() {
   return /mInputShown=true/.test(out);
 }
 
-module.exports = { connect, a11yClick, setupMockLocation, setMockLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };
+module.exports = { connect, a11yClick, pushMedia, toggleNotifications, setupMockLocation, setMockLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };

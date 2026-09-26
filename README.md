@@ -11,8 +11,14 @@ KaiOS browser  --XHR-->  Node server (Mac, :8080)  --adb-->  redroid container (
 - The phone polls `/frame` every 1000 ms. The server hashes each raw screenshot and only sends a JPEG when it changed (else `204`).
 - Clicking the screenshot taps the same spot on Android. If the screen hasn't changed at all 700 ms later (some screens, like WhatsApp registration, ignore simulated touches), the server retries it as an accessibility click on the element there, the way a screen reader does (`helper/A11yClick.java`).
 - Key **7** sends the phone's own location to Android (GPS and network location are replaced by a fixed point, since the container has none). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs the HTTPS URL, because browsers only allow location on secure pages.
+- Key **1** opens or closes Android's notification shade.
+- Key **9** opens the phone's camera (or photo picker). The photo is uploaded, saved to Android's `DCIM/Camera` and indexed, so you can attach it from the gallery in any app. There's no live camera passthrough, because Android here has no camera HAL.
 - Key **8** pans the view in half-screen steps: top → middle → bottom → middle → top. Key **0** scrolls the app down and **2** scrolls it up (a slow swipe of about 60% of one half).
 - When Android shows its keyboard, a native text box appears at the top, pre-filled with the field's current text (all selected: type to replace it, or move the cursor to edit it). Enter replaces the Android field's text with the box's; Enter without changes presses Enter on Android. Backspace on an empty box, Back/Escape, or clicking the screenshot closes it. (For an empty field, Android may report its grey placeholder as text, so that shows up pre-filled; just type over it.)
+
+Moving to another Mac (image, data and all): see [MOVING-TO-ANOTHER-MAC.md](MOVING-TO-ANOTHER-MAC.md).
+
+Planned (not started): moving to the official Android Emulator for a virtual camera. See [EMULATOR-MIGRATION.md](EMULATOR-MIGRATION.md).
 
 ## Setup
 
@@ -65,5 +71,7 @@ OrbStack's Linux kernel differs from what redroid expects. Each of these was a b
 | `POST /tap {x, y}` | Android coordinates |
 | `POST /scroll {dir}` | `dir` is `up` or `down`; swipes through the middle of the screen |
 | `GET /field` | `{text}` of the focused Android field (~2 s, via a UI dump) |
+| `POST /notifications` | Toggles the notification shade |
+| `POST /photo` (image body) | Saves the image to Android's camera folder as JPEG |
 | `GET/POST /location {lat, lng, accuracy}` | Location Android reports to apps |
 | `POST /text {text, replace, enter}` | `replace` clears the field first; types Unicode text via ADBKeyBoard; `enter` sends KEYCODE_ENTER |

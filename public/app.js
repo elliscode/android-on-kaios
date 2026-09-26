@@ -13,6 +13,7 @@
   var screen = document.getElementById('screen');
   var kb = document.getElementById('kb');
   var msg = document.getElementById('msg');
+  var photo = document.getElementById('photo');
   var msgTimer = null;
 
   var lastHash = '';
@@ -175,6 +176,25 @@
     }, { enableHighAccuracy: true, timeout: 30000, maximumAge: 60000 });
   }
 
+  // Key 9: take a photo with the phone's camera (or pick one) and put it in Android's gallery.
+  photo.addEventListener('change', function () {
+    var file = photo.files && photo.files[0];
+    if (!file) return;
+    showMessage('Sending photo...');
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/photo', true);
+    xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
+    xhr.timeout = 120000;
+    xhr.upload.onprogress = function (e) {
+      if (e.lengthComputable) showMessage('Sending photo... ' + Math.round(e.loaded * 100 / e.total) + '%');
+    };
+    xhr.onloadend = function () {
+      showMessage(xhr.status === 200 ? 'Photo added to Android gallery' : 'Photo failed (' + xhr.status + ')');
+    };
+    xhr.send(file);
+    photo.value = ''; // allow choosing another photo later
+  });
+
   // Top offsets (px) of the visible window: every half screen from the top down to the bottom.
   // For 240x552 that's [0, 138, 276] = top, middle, bottom.
   function panOffsets() {
@@ -203,7 +223,8 @@
 
   // Keys (ignored while typing in the text box):
   //   2 = scroll Android up, 0 = scroll Android down, 8 = pan top -> middle -> bottom -> middle -> top,
-  //   7 = share the phone's location with Android.
+  //   7 = share the phone's location with Android, 9 = take a photo into Android's gallery,
+  //   1 = open/close Android's notification shade.
   var SCROLL_KEYS = { '2': 'up', '0': 'down' };
 
   document.addEventListener('keydown', function (e) {
@@ -211,6 +232,16 @@
     if (e.key === '7') {
       e.preventDefault();
       shareLocation();
+      return;
+    }
+    if (e.key === '1') {
+      e.preventDefault();
+      post('/notifications', {});
+      return;
+    }
+    if (e.key === '9') {
+      e.preventDefault();
+      photo.click();
       return;
     }
     if (e.key === '8') {
