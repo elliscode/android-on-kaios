@@ -1,5 +1,6 @@
 // Thin wrappers around the `adb` CLI. All commands go through execFile with argument
 // arrays, so nothing from the client is ever interpolated into a host shell.
+const path = require('path');
 const { execFile } = require('child_process');
 
 const SERIAL = process.env.ADB_SERIAL || 'localhost:5555';
@@ -28,8 +29,33 @@ function connect() {
 // The display is nearly square (240x276 shape), so Android letterboxes portrait-locked apps (e.g.
 // McDonald's) into a narrow column. This makes letterboxed apps use the full display instead.
 function configure() {
-  return adb(['shell', 'cmd', 'window', 'set-letterbox-style',
-    '--isDisplayAspectRatioEnabledForFixedOrientationLetterbox', 'true']).catch(() => {});
+  return Promise.all([
+    adb(['shell', 'cmd', 'window', 'set-letterbox-style',
+      '--isDisplayAspectRatioEnabledForFixedOrientationLetterbox', 'true']).catch(() => {}),
+    adb(['push', A11Y_JAR, A11Y_DEVICE_JAR]).catch(() => {}),
+  ]);
+}
+
+// Only one UiAutomation (accessibility) connection can exist at a time, so the UI dump and the
+// accessibility click run one after another.
+let uiAutomationQueue = Promise.resolve();
+function withUiAutomation(fn) {
+  const run = uiAutomationQueue.then(fn, fn);
+  uiAutomationQueue = run.catch(() => {});
+  return run;
+}
+
+// Accessibility click (helper/A11yClick.java): clicks the element at a point the way a screen
+// reader does. Used when an app ignores injected touches (e.g. WhatsApp's registration screen).
+const A11Y_JAR = path.join(__dirname, 'a11y.jar');
+const A11Y_DEVICE_JAR = '/data/local/tmp/a11y.jar';
+
+function a11yClick(x, y) {
+  return withUiAutomation(async () => {
+    const out = await adb(['shell', 'CLASSPATH=' + A11Y_DEVICE_JAR + ':/system/framework/uiautomator.jar',
+      'app_process', '/system/bin', 'A11yClick', String(x), String(y)]);
+    return JSON.parse(out.toString().trim().split('\n').pop());
+  });
 }
 
 // Raw RGBA framebuffer. Android 10+ header is 16 bytes: width, height, format, colorspace.
@@ -97,7 +123,8 @@ function decodeXml(s) {
 // Text of the focused input field, read from a UI hierarchy dump (~2 s).
 // Caveat: for an empty field Android reports its hint (placeholder) as the text.
 async function focusedFieldText() {
-  const xml = (await adb(['exec-out', 'uiautomator', 'dump', '/dev/tty'], { timeout: 10000 })).toString();
+  const xml = (await withUiAutomation(() =>
+    adb(['exec-out', 'uiautomator', 'dump', '/dev/tty'], { timeout: 10000 }))).toString();
   const nodes = xml.match(/<node [^>]*>/g) || [];
   const attr = (node, name) => {
     const m = node.match(new RegExp(' ' + name + '="([^"]*)"'));
@@ -114,4 +141,4 @@ async function keyboardShown() {
   return /mInputShown=true/.test(out);
 }
 
-module.exports = { connect, setupMockLocation, setMockLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };
+module.exports = { connect, a11yClick, setupMockLocation, setMockLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };

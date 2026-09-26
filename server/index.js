@@ -117,19 +117,38 @@ app.get('/frame', async (req, res) => {
   res.type('image/jpeg').send(frame.jpeg);
 });
 
+// Some screens ignore injected touches (WhatsApp registration). If the screen hasn't changed at
+// all this long after a tap, the tap is retried as an accessibility click on the element there.
+const TAP_FALLBACK_MS = 700;
+
 app.post('/tap', async (req, res) => {
-  const w = frame ? frame.width : 480;
-  const h = frame ? frame.height : 552;
+  const w = frame ? frame.width : 960;
+  const h = frame ? frame.height : 2208;
   const x = Math.round(Number(req.body && req.body.x));
   const y = Math.round(Number(req.body && req.body.y));
   if (!Number.isFinite(x) || !Number.isFinite(y)) return res.status(400).json({ error: 'x and y required' });
+  const tx = Math.min(Math.max(x, 0), w - 1);
+  const ty = Math.min(Math.max(y, 0), h - 1);
+  let before;
   try {
-    await adb.tap(Math.min(Math.max(x, 0), w - 1), Math.min(Math.max(y, 0), h - 1));
-    recaptureSoon();
+    await capture();
+    before = frame && frame.hash;
+    await adb.tap(tx, ty);
     res.status(204).end();
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    return res.status(502).json({ error: err.message });
   }
+  setTimeout(async () => {
+    await capture();
+    if (!frame || frame.hash !== before) return recaptureSoon(); // the tap did something
+    try {
+      const result = await adb.a11yClick(tx, ty);
+      console.log('tap ignored at ' + tx + ',' + ty + '; accessibility click:', JSON.stringify(result));
+    } catch (err) {
+      console.error('accessibility click failed:', err.message.trim());
+    }
+    recaptureSoon();
+  }, TAP_FALLBACK_MS);
 });
 
 // Scrolls by swiping vertically through the middle of the screen. A slow swipe (no fling)

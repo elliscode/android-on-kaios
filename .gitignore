@@ -8,3 +8,5 @@ docker/ADBKeyboard.apk
 backups/
 server/location.json
 server/certs/
+docker/r8-*.jar
+server/a11y.jar

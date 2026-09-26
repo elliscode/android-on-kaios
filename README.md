@@ -9,7 +9,7 @@ KaiOS browser  --XHR-->  Node server (Mac, :8080)  --adb-->  redroid container (
 - Android runs natively in a container via [redroid](https://github.com/remote-android/redroid-doc) (Android 14, arm64) with MindTheGapps (Play Store / Play Services).
 - Android's screen is **960x2208 at 480 dpi**: 4x the phone's 240x276 area wide and two of those screens tall, so apps see a normal tall phone (320x736 dp). A near-square screen made apps letterbox or clip. The phone shows one half at a time. The resolution is set only in `docker-compose.yml`; the client works out the scale and number of pages from the frame size.
 - The phone polls `/frame` every 1000 ms. The server hashes each raw screenshot and only sends a JPEG when it changed (else `204`).
-- Clicking the screenshot taps the same spot on Android.
+- Clicking the screenshot taps the same spot on Android. If the screen hasn't changed at all 700 ms later (some screens, like WhatsApp registration, ignore simulated touches), the server retries it as an accessibility click on the element there, the way a screen reader does (`helper/A11yClick.java`).
 - Key **7** sends the phone's own location to Android (GPS and network location are replaced by a fixed point, since the container has none). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs the HTTPS URL, because browsers only allow location on secure pages.
 - Key **8** pans the view in half-screen steps: top → middle → bottom → middle → top. Key **0** scrolls the app down and **2** scrolls it up (a slow swipe of about 60% of one half).
 - When Android shows its keyboard, a native text box appears at the top, pre-filled with the field's current text (all selected: type to replace it, or move the cursor to edit it). Enter replaces the Android field's text with the box's; Enter without changes presses Enter on Android. Backspace on an empty box, Back/Escape, or clicking the screenshot closes it. (For an empty field, Android may report its grey placeholder as text, so that shows up pre-filled; just type over it.)
@@ -22,6 +22,7 @@ Needs OrbStack, `adb`, and Node 18+.
 ./scripts/build-image.sh       # once: builds redroid-gapps:14
 docker compose up -d           # first boot takes ~2 min
 ./scripts/setup-device.sh      # installs ADBKeyBoard IME, sideloads anything in ./apks
+./scripts/build-helper.sh      # once: builds server/a11y.jar (accessibility-click fallback; needs a JDK)
 cd server && npm install && npm start
 ```
 
@@ -53,6 +54,7 @@ OrbStack's Linux kernel differs from what redroid expects. Each of these was a b
 | Simulated Bluetooth HAL crash-loops → system_server hangs | Bluetooth HAL disabled and `android.hardware.bluetooth` feature removed |
 | Play Protect stalls `adb install` forever | `setup-device.sh` disables adb install verification |
 | No telephony feature → WhatsApp only offers companion (tablet) mode | `docker/overlay/.../android-on-kaios-telephony.xml` declares phone hardware (no real modem/SIM) |
+| WhatsApp's registration screen ignores injected touches (anti-automation) | Taps with no visible effect are retried as accessibility clicks |
 | Near-square display → portrait-locked apps (McDonald's) letterboxed into a narrow column | Server sets letterbox to use the display aspect ratio on every adb connect (resets on boot) |
 
 ## API
