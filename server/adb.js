@@ -21,7 +21,15 @@ function adb(args, opts) {
 function connect() {
   return new Promise((resolve) => {
     execFile('adb', ['connect', SERIAL], () => resolve());
-  });
+  }).then(configure);
+}
+
+// Runtime window settings that Android resets on every boot, so they're reapplied on each connect.
+// The display is nearly square (240x276 shape), so Android letterboxes portrait-locked apps (e.g.
+// McDonald's) into a narrow column. This makes letterboxed apps use the full display instead.
+function configure() {
+  return adb(['shell', 'cmd', 'window', 'set-letterbox-style',
+    '--isDisplayAspectRatioEnabledForFixedOrientationLetterbox', 'true']).catch(() => {});
 }
 
 // Raw RGBA framebuffer. Android 10+ header is 16 bytes: width, height, format, colorspace.
@@ -38,6 +46,10 @@ function tap(x, y) {
   return adb(['shell', 'input', 'tap', String(x), String(y)]);
 }
 
+function swipe(x1, y1, x2, y2, ms) {
+  return adb(['shell', 'input', 'swipe', String(x1), String(y1), String(x2), String(y2), String(ms)]);
+}
+
 function keyevent(code) {
   return adb(['shell', 'input', 'keyevent', String(code)]);
 }
@@ -49,9 +61,57 @@ function inputText(text) {
   return adb(['shell', 'am', 'broadcast', '-a', 'ADB_INPUT_B64', '--es', 'msg', b64]);
 }
 
+// Mock location: the container has no GPS, and Google's network location has no Wi-Fi/cell data,
+// so apps get no location at all. Test providers replace "gps" and "network" with a fixed point.
+// Android forgets them on reboot, so setupMockLocation() runs again after each (re)connect.
+const MOCK_PROVIDERS = ['gps', 'network'];
+
+async function setupMockLocation() {
+  await adb(['shell', 'appops', 'set', 'com.android.shell', 'android:mock_location', 'allow']);
+  for (const p of MOCK_PROVIDERS) {
+    await adb(['shell', 'cmd', 'location', 'providers', 'add-test-provider', p,
+      '--supportsAltitude', '--supportsSpeed', '--supportsBearing']);
+    await adb(['shell', 'cmd', 'location', 'providers', 'set-test-provider-enabled', p, 'true']);
+  }
+}
+
+async function setMockLocation(lat, lng, accuracy) {
+  for (const p of MOCK_PROVIDERS) {
+    await adb(['shell', 'cmd', 'location', 'providers', 'set-test-provider-location', p,
+      '--location', lat + ',' + lng, '--accuracy', String(accuracy)]);
+  }
+}
+
+// Clears the focused field through ADBKeyBoard (deletes all text around the cursor).
+function clearText() {
+  return adb(['shell', 'am', 'broadcast', '-a', 'ADB_CLEAR_TEXT']);
+}
+
+function decodeXml(s) {
+  return s.replace(/&(#x?[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g, (m, e) => {
+    if (e[0] === '#') return String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10));
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e];
+  });
+}
+
+// Text of the focused input field, read from a UI hierarchy dump (~2 s).
+// Caveat: for an empty field Android reports its hint (placeholder) as the text.
+async function focusedFieldText() {
+  const xml = (await adb(['exec-out', 'uiautomator', 'dump', '/dev/tty'], { timeout: 10000 })).toString();
+  const nodes = xml.match(/<node [^>]*>/g) || [];
+  const attr = (node, name) => {
+    const m = node.match(new RegExp(' ' + name + '="([^"]*)"'));
+    return m ? decodeXml(m[1]) : '';
+  };
+  const focused = nodes.filter((n) => attr(n, 'focused') === 'true');
+  const field = focused.find((n) => /EditText|AutoCompleteTextView/.test(attr(n, 'class'))) || focused[0];
+  if (!field || attr(field, 'password') === 'true') return '';
+  return attr(field, 'text');
+}
+
 async function keyboardShown() {
   const out = (await adb(['shell', 'dumpsys', 'input_method'])).toString();
   return /mInputShown=true/.test(out);
 }
 
-module.exports = { connect, screencapRaw, tap, keyevent, inputText, keyboardShown };
+module.exports = { connect, setupMockLocation, setMockLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };

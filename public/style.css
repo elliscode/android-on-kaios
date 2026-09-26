@@ -14,10 +14,12 @@ body {
   background: #000;
 }
 
+/* Android's frame scaled to 240px wide. It can be taller than 276px (several stacked pages);
+   app.js shows one page at a time by shifting it up with a negative margin-top. */
 #screen {
   display: block;
   width: 240px;
-  height: 276px;
+  height: auto;
 }
 
 /* Native text box, shown over the top of the screenshot while Android's keyboard is up. */
@@ -33,4 +35,17 @@ body {
   color: #000;
   outline: 2px solid #1a73e8;
   outline-offset: -2px;
+}
+
+/* Short status messages (e.g. location), shown over the top of the screenshot for a few seconds. */
+#msg {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 240px;
+  padding: 4px;
+  font-size: 14px;
+  background: #222;
+  color: #fff;
 }

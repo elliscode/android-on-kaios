@@ -7,10 +7,12 @@ KaiOS browser  --XHR-->  Node server (Mac, :8080)  --adb-->  redroid container (
 ```
 
 - Android runs natively in a container via [redroid](https://github.com/remote-android/redroid-doc) (Android 14, arm64) with MindTheGapps (Play Store / Play Services).
-- Android's screen is **960x1104 at 480 dpi = 4x the phone's 240x276 usable area**, so it renders sharp but lays out the same. The resolution is set only in `docker-compose.yml`. The client works out the scale from the frame width (phone px × 4 = Android px).
+- Android's screen is **960x2208 at 480 dpi**: 4x the phone's 240x276 area wide and two of those screens tall, so apps see a normal tall phone (320x736 dp). A near-square screen made apps letterbox or clip. The phone shows one half at a time. The resolution is set only in `docker-compose.yml`; the client works out the scale and number of pages from the frame size.
 - The phone polls `/frame` every 1000 ms. The server hashes each raw screenshot and only sends a JPEG when it changed (else `204`).
 - Clicking the screenshot taps the same spot on Android.
-- When Android shows its keyboard, a native text box appears at the top. Enter sends the text, Enter on an empty box presses Enter on Android, and Backspace on an empty box, Back/Escape, or clicking the screenshot closes it.
+- Key **7** sends the phone's own location to Android (GPS and network location are replaced by a fixed point, since the container has none). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs the HTTPS URL, because browsers only allow location on secure pages.
+- Key **8** pans the view in half-screen steps: top → middle → bottom → middle → top. Key **0** scrolls the app down and **2** scrolls it up (a slow swipe of about 60% of one half).
+- When Android shows its keyboard, a native text box appears at the top, pre-filled with the field's current text (all selected: type to replace it, or move the cursor to edit it). Enter replaces the Android field's text with the box's; Enter without changes presses Enter on Android. Backspace on an empty box, Back/Escape, or clicking the screenshot closes it. (For an empty field, Android may report its grey placeholder as text, so that shows up pre-filled; just type over it.)
 
 ## Setup
 
@@ -25,7 +27,7 @@ cd server && npm install && npm start
 
 **After a Mac/OrbStack restart, run `docker compose up -d` again.** Android deliberately doesn't auto-start, because the binder permission fix has to run first.
 
-Then on the phone, open `http://<mac-lan-ip>:8080` in the KaiOS browser (`ipconfig getifaddr en0` gives the IP).
+Then on the phone, open `https://<mac-lan-ip>:8443` in the KaiOS browser and accept the self-signed certificate warning once (`ipconfig getifaddr en0` gives the IP). `http://<mac-lan-ip>:8080` works too, except for location sharing.
 
 ### Installing apps
 
@@ -50,6 +52,8 @@ OrbStack's Linux kernel differs from what redroid expects. Each of these was a b
 | No PSI → `lmkd` exits → system_server hangs, Watchdog kills it | Fake `/sys/module/lowmemorykiller` (`docker/sysmodule`) so lmkd runs in legacy mode |
 | Simulated Bluetooth HAL crash-loops → system_server hangs | Bluetooth HAL disabled and `android.hardware.bluetooth` feature removed |
 | Play Protect stalls `adb install` forever | `setup-device.sh` disables adb install verification |
+| No telephony feature → WhatsApp only offers companion (tablet) mode | `docker/overlay/.../android-on-kaios-telephony.xml` declares phone hardware (no real modem/SIM) |
+| Near-square display → portrait-locked apps (McDonald's) letterboxed into a narrow column | Server sets letterbox to use the display aspect ratio on every adb connect (resets on boot) |
 
 ## API
 
@@ -57,4 +61,7 @@ OrbStack's Linux kernel differs from what redroid expects. Each of these was a b
 | --- | --- |
 | `GET /frame?h=<hash>` | `200` JPEG (full Android resolution) or `204` if `h` is current. Headers: `X-Hash`, `X-Keyboard: 0\|1` |
 | `POST /tap {x, y}` | Android coordinates |
-| `POST /text {text, enter}` | Types Unicode text via ADBKeyBoard; `enter: true` sends KEYCODE_ENTER |
+| `POST /scroll {dir}` | `dir` is `up` or `down`; swipes through the middle of the screen |
+| `GET /field` | `{text}` of the focused Android field (~2 s, via a UI dump) |
+| `GET/POST /location {lat, lng, accuracy}` | Location Android reports to apps |
+| `POST /text {text, replace, enter}` | `replace` clears the field first; types Unicode text via ADBKeyBoard; `enter` sends KEYCODE_ENTER |

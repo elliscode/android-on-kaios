@@ -6,3 +6,5 @@ docker/mindthegapps.zip
 .DS_Store
 docker/ADBKeyboard.apk
 backups/
+server/location.json
+server/certs/

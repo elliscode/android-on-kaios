@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android-on-kaios: declare phone hardware so apps (WhatsApp) treat this as a phone, not a
+     tablet. There is no real modem or SIM; SMS/call verification codes go to your real phone.
+     Same feature set as AOSP's android.hardware.telephony.gsm.xml. -->
+<permissions>
+    <feature name="android.hardware.telephony" />
+    <feature name="android.hardware.telephony.radio.access" />
+    <feature name="android.hardware.telephony.subscription" />
+    <feature name="android.hardware.telephony.gsm" />
+    <feature name="android.hardware.telephony.calling" />
+    <feature name="android.hardware.telephony.data" />
+    <feature name="android.hardware.telephony.messaging" />
+</permissions>

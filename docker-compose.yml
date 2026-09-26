@@ -27,12 +27,14 @@ services:
       # reconnecting to it until the Watchdog kills it. A fake in-kernel lowmemorykiller
       # interface lets lmkd start in legacy mode. (It only writes the minfree/adj values here.)
       - ./docker/sysmodule:/sys/module
-    # 960x1104 = exactly 4x the KaiOS usable area (240x276). Keep it an integer multiple.
-    # dpi scales with it (120 per 1x) so Android's layout stays the same, just sharper.
-    # The client reads the scale from the frame size, so nothing else needs changing.
+    # 960x2208 = 4x the KaiOS usable area (240x276) wide, and two of those screens tall.
+    # A near-square display breaks apps (letterboxing, clipped dialogs), so Android gets a normal
+    # tall phone shape (320x736 dp at 480 dpi) and the client pans between top and bottom halves.
+    # Keep width and height integer multiples of 240x276. The client derives the scale and number
+    # of pages from the frame size, so nothing else needs changing.
     command:
       - androidboot.redroid_width=960
-      - androidboot.redroid_height=1104
+      - androidboot.redroid_height=2208
       - androidboot.redroid_dpi=480
       - androidboot.redroid_gpu_mode=guest
 
