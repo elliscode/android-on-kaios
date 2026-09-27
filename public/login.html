@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=240, initial-scale=1, user-scalable=no">
+<title>Android</title>
+<style>
+/* Same rules as the app: 240x276 at the top-left, no margins or padding anywhere. */
+* {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 240px;
+  height: 276px;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: sans-serif;
+}
+
+/* Centres the heading, box and status line within the 240x276 area. */
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px; /* spacing between items, so every element keeps margin 0 */
+  text-align: center;
+}
+
+h1 {
+  width: 220px;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+#code {
+  width: 200px;
+  height: 40px;
+  font-size: 26px;
+  text-align: center;
+  letter-spacing: 3px;
+  background: #fff;
+  color: #000;
+}
+
+#status {
+  width: 220px;
+  min-height: 36px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #fc6;
+}
+</style>
+</head>
+<body>
+<h1>ENTER THE CODE SHOWN ON THE SCREEN</h1>
+<input id="code" type="tel" maxlength="8" autocomplete="off" autofocus>
+<div id="status"><!--NOTICE--></div>
+<script src="login.js"></script>
+</body>
+</html>

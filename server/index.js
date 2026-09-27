@@ -1,16 +1,16 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const https = require('https');
-const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const express = require('express');
 const sharp = require('sharp');
 const adb = require('./adb');
+const auth = require('./auth');
 
+// Only Caddy (on this Mac) talks to the server; it provides HTTPS for android.elliscode.com.
+const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8080;
-const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 8443;
-const CERT_DIR = path.join(__dirname, 'certs');
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const CAPTURE_MS = 1000;
 const IDLE_AFTER_MS = 5000; // stop capturing when no client has polled for this long
 const JPEG_QUALITY = 70;
@@ -103,8 +103,40 @@ function recaptureSoon() {
 }
 
 const app = express();
+app.set('trust proxy', 'loopback'); // client IP from Caddy's X-Forwarded-For, trusted only from 127.0.0.1
 app.use(express.json({ limit: '16kb' }));
-app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: 0 }));
+
+function readPublic(name) {
+  return fs.readFileSync(path.join(PUBLIC_DIR, name), 'utf8');
+}
+
+// The app page with the session's CSRF token and style.css / app.js inlined.
+function appPage(csrf) {
+  return readPublic('index.html')
+    .replace('<!--CSRF-->', () => '<meta name="csrf" content="' + csrf + '">')
+    .replace('<!--STYLE-->', () => '<style>\n' + readPublic('style.css') + '</style>')
+    .replace('<!--SCRIPT-->', () => '<script>\n' + readPublic('app.js') + '</script>');
+}
+
+// Logged in: the app. Otherwise: the login page (and, from home, a new code in the log).
+app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const s = auth.session(req);
+  if (s) return res.type('html').send(appPage(s.csrf));
+  const issued = auth.startAttempt(req, res);
+  res.type('html').send(readPublic('login.html')
+    .replace('<!--NOTICE-->', () => issued ? '' : 'Login is only available from the home network'));
+});
+
+app.get('/login.js', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.type('js').send(readPublic('login.js'));
+});
+
+app.post('/login', auth.login);
+
+// Everything below requires a session cookie plus the X-CSRF-Token header.
+app.use(auth.requireSessionAndCsrf);
 
 app.get('/frame', async (req, res) => {
   wake();
@@ -251,24 +283,6 @@ app.post('/text', async (req, res) => {
   }
 });
 
-// Self-signed certificate for HTTPS, created once. Browsers only give pages location access over
-// HTTPS, so the phone uses https://<mac-ip>:8443 (accepting the certificate warning once).
-function loadOrCreateCert() {
-  const key = path.join(CERT_DIR, 'key.pem');
-  const cert = path.join(CERT_DIR, 'cert.pem');
-  if (!fs.existsSync(key) || !fs.existsSync(cert)) {
-    fs.mkdirSync(CERT_DIR, { recursive: true });
-    const ips = Object.values(os.networkInterfaces()).flat()
-      .filter((i) => i && i.family === 'IPv4').map((i) => 'IP:' + i.address);
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650',
-      '-keyout', key, '-out', cert, '-subj', '/CN=android-on-kaios',
-      '-addext', 'subjectAltName=' + ['DNS:localhost'].concat(ips).join(',')], { stdio: 'ignore' });
-  }
-  return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
-}
-
 connect().then(() => {
-  app.listen(PORT, '0.0.0.0', () => console.log('Listening on http://0.0.0.0:' + PORT));
-  https.createServer(loadOrCreateCert(), app)
-    .listen(HTTPS_PORT, '0.0.0.0', () => console.log('Listening on https://0.0.0.0:' + HTTPS_PORT));
+  app.listen(PORT, HOST, () => console.log('Listening on http://' + HOST + ':' + PORT));
 });

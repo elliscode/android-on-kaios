@@ -3,14 +3,16 @@
 Run Android apps in a container on a Mac, and use them from a KaiOS 3.0.1 phone (Gecko 84).
 
 ```
-KaiOS browser  --XHR-->  Node server (Mac, :8080)  --adb-->  redroid container (:5555)
+KaiOS browser --HTTPS--> Caddy (:443, android.elliscode.com) --> Node server (127.0.0.1:8080) --adb--> redroid (:5555)
 ```
+
+- Access is gated by a login (see [Public access and login](#public-access-and-login)).
 
 - Android runs natively in a container via [redroid](https://github.com/remote-android/redroid-doc) (Android 14, arm64) with MindTheGapps (Play Store / Play Services).
 - Android's screen is **960x2208 at 480 dpi**: 4x the phone's 240x276 area wide and two of those screens tall, so apps see a normal tall phone (320x736 dp). A near-square screen made apps letterbox or clip. The phone shows one half at a time. The resolution is set only in `docker-compose.yml`; the client works out the scale and number of pages from the frame size.
 - The phone polls `/frame` every 1000 ms. The server hashes each raw screenshot and only sends a JPEG when it changed (else `204`).
 - Clicking the screenshot taps the same spot on Android. If the screen hasn't changed at all 700 ms later (some screens, like WhatsApp registration, ignore simulated touches), the server retries it as an accessibility click on the element there, the way a screen reader does (`helper/A11yClick.java`).
-- Key **7** sends the phone's own location to Android (GPS and network location are replaced by a fixed point, since the container has none). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs the HTTPS URL, because browsers only allow location on secure pages.
+- Key **7** sends the phone's own location to Android (GPS and network location are replaced by a fixed point, since the container has none). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs HTTPS, because browsers only allow location on secure pages.
 - Key **1** opens or closes Android's notification shade.
 - Key **9** opens the phone's camera (or photo picker). The photo is uploaded, saved to Android's `DCIM/Camera` and indexed, so you can attach it from the gallery in any app. There's no live camera passthrough, because Android here has no camera HAL.
 - Key **8** pans the view in half-screen steps: top → middle → bottom → middle → top. Key **0** scrolls the app down and **2** scrolls it up (a slow swipe of about 60% of one half).
@@ -30,11 +32,33 @@ docker compose up -d           # first boot takes ~2 min
 ./scripts/setup-device.sh      # installs ADBKeyBoard IME, sideloads anything in ./apks
 ./scripts/build-helper.sh      # once: builds server/a11y.jar (accessibility-click fallback; needs a JDK)
 cd server && npm install && npm start
+caddy run --config Caddyfile   # from the project folder, in another terminal (brew install caddy)
 ```
 
 **After a Mac/OrbStack restart, run `docker compose up -d` again.** Android deliberately doesn't auto-start, because the binder permission fix has to run first.
 
-Then on the phone, open `https://<mac-lan-ip>:8443` in the KaiOS browser and accept the self-signed certificate warning once (`ipconfig getifaddr en0` gives the IP). `http://<mac-lan-ip>:8080` works too, except for location sharing.
+Then on the phone, open `https://android.elliscode.com` in the KaiOS browser (from home the first time, to log in).
+
+## Public access and login
+
+The server listens only on `127.0.0.1:8080`. **Caddy** (`Caddyfile`) serves `https://android.elliscode.com` with an automatic Let's Encrypt certificate and forwards to it.
+
+**One-time network setup:**
+- **DNS:** an `A` record for `android.elliscode.com` pointing at the home public IP.
+- **Router:** forward TCP 443 to this Mac.
+
+**Logging in** (`server/auth.js`):
+- **The code:** opening the site without a session shows "ENTER THE CODE SHOWN ON THE SCREEN". Each page load prints a new 8-digit code in the server log, `[login] code 12345678 for 192.168.0.57 (home)`, and reloading invalidates the previous one.
+- **Home only:** codes are only issued, and only accepted, for requests from the home network. That means private LAN addresses, or the home's own public IP, which is whatever `android.elliscode.com` resolves to (refreshed every 5 minutes). Anything else is logged as `(not home)` and refused. It isn't counted against the limit, so strangers can't lock you out.
+- **Attempt limit:** 2 code attempts per rolling hour, total. Each code allows one guess.
+- **After login:**
+  - **Cookie:** a 128-character `[a-zA-Z0-9]` cookie (`Secure; HttpOnly; SameSite=Strict`).
+  - **CSRF token:** a 128-character token embedded in the page.
+  - **Where it works:** both last **4 months** and work from anywhere, not just home.
+  - **Every request** must carry both, or it gets a 401 and the page returns to the login screen.
+- **Sessions** are stored hashed in `server/sessions.json`. To log everyone out: `node server/auth.js --revoke-all`, then restart the server.
+
+**If the router can't loop the public address back** (the site doesn't open from home Wi-Fi), uncomment the LAN block in `Caddyfile` and use `https://<mac-lan-ip>` at home. It's a separate login with its own cookie.
 
 ### Installing apps
 
@@ -65,8 +89,11 @@ OrbStack's Linux kernel differs from what redroid expects. Each of these was a b
 
 ## API
 
+All endpoints except `GET /`, `GET /login.js` and `POST /login` need the session cookie plus an `X-CSRF-Token` header.
+
 | Endpoint | Description |
 | --- | --- |
+| `POST /login {code}` | Exchanges the current code for a session (home network only; 2 per hour) |
 | `GET /frame?h=<hash>` | `200` JPEG (full Android resolution) or `204` if `h` is current. Headers: `X-Hash`, `X-Keyboard: 0\|1` |
 | `POST /tap {x, y}` | Android coordinates |
 | `POST /scroll {dir}` | `dir` is `up` or `down`; swipes through the middle of the screen |

@@ -26,16 +26,29 @@
   var openCount = 0;           // identifies the current opening, to ignore stale /field replies
   var HINT = 'Enter=send  Back=close';
 
-  function post(path, body) {
+  // Session CSRF token, embedded in the page by the server. Sent with every request.
+  var csrfMeta = document.querySelector('meta[name="csrf"]');
+  var CSRF = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
+  // Opens an XHR with the CSRF header. A 401 means the session is gone: reload to the login page.
+  function request(method, path) {
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', path, true);
+    xhr.open(method, path, true);
+    xhr.setRequestHeader('X-CSRF-Token', CSRF);
+    xhr.addEventListener('load', function () {
+      if (xhr.status === 401) location.reload();
+    });
+    return xhr;
+  }
+
+  function post(path, body) {
+    var xhr = request('POST', path);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.send(JSON.stringify(body));
   }
 
   function poll() {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', '/frame?h=' + encodeURIComponent(lastHash), true);
+    var xhr = request('GET', '/frame?h=' + encodeURIComponent(lastHash));
     xhr.responseType = 'blob';
     xhr.timeout = 10000;
     xhr.onload = function () {
@@ -82,8 +95,7 @@
   // Pre-fill with the Android field's current text, all selected, so typing replaces it and
   // moving the cursor lets you edit it. Skipped if the user already started typing.
   function loadFieldText(id) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', '/field', true);
+    var xhr = request('GET', '/field');
     xhr.responseType = 'json';
     xhr.timeout = 15000;
     xhr.onloadend = function () {
@@ -156,14 +168,13 @@
       return;
     }
     if (window.isSecureContext === false) {
-      showMessage('Location needs HTTPS: open https://' + location.hostname + ':8443');
+      showMessage('Location needs the https:// address');
       return;
     }
     showMessage('Getting location...');
     navigator.geolocation.getCurrentPosition(function (pos) {
       var c = pos.coords;
-      var xhr = new XMLHttpRequest();
-      xhr.open('POST', '/location', true);
+      var xhr = request('POST', '/location');
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.onloadend = function () {
         showMessage(xhr.status === 204
@@ -181,8 +192,7 @@
     var file = photo.files && photo.files[0];
     if (!file) return;
     showMessage('Sending photo...');
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/photo', true);
+    var xhr = request('POST', '/photo');
     xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
     xhr.timeout = 120000;
     xhr.upload.onprogress = function (e) {

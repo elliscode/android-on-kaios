@@ -24,6 +24,7 @@ You already have Homebrew. Install the rest:
 brew install --cask orbstack                 # Docker + the Linux VM Android runs in
 brew install node                            # Node.js (18 or newer) for the server
 brew install --cask android-platform-tools   # adb, how the server talks to Android
+brew install caddy                           # HTTPS for android.elliscode.com
 ```
 
 Open **OrbStack** once after installing it and finish its first-run setup, so that `docker ps`
@@ -59,8 +60,9 @@ You don't need Java, Python or the Android SDK. The prebuilt files (the Android 
      --exclude 'docker/r8-*.jar' \
      ~/git/android-on-kaios/ ~/Desktop/android-move/android-on-kaios/
    ```
-   This includes `backups/` (your data), `server/certs/` (the HTTPS certificate),
-   `server/location.json` (your shared location), `server/a11y.jar`, and the `docker/` overlays.
+   This includes `backups/` (your data), `server/sessions.json` (so your phone stays logged in),
+   `server/location.json` (your shared location), `server/a11y.jar`, `Caddyfile`, and the
+   `docker/` overlays.
 
 5. **Move `~/Desktop/android-move` to the new Mac:** use an external drive, AirDrop, or
    `scp -r ~/Desktop/android-move <user>@<mac-mini>.local:~/Desktop/`.
@@ -105,15 +107,24 @@ You don't need Java, Python or the Android SDK. The prebuilt files (the Android 
    npm install
    npm start
    ```
-   If macOS asks whether `node` may accept incoming network connections, click **Allow**.
+7. **Start Caddy** from the project folder, in another terminal:
+   ```sh
+   cd ~/git/android-on-kaios
+   caddy run --config Caddyfile
+   ```
+   If macOS asks whether `caddy` may accept incoming network connections, click **Allow**.
 
-## Step 3: Point the phone at the new Mac
+## Step 3: Point the internet at the new Mac
 
-1. **Get the new Mac's IP address:** `ipconfig getifaddr en0` (or `en1` if it's on Wi-Fi and
+1. **Get the new Mac's LAN IP address:** `ipconfig getifaddr en0` (or `en1` if it's on Wi-Fi and
    `en0` prints nothing).
-2. **On the KaiOS phone, open `https://<new-ip>:8443`** and accept the certificate warning again.
-   The address changed, so the phone treats it as a new site.
-3. **Check it works:**
+2. **On your router, change the TCP 443 port forward** to point at the new Mac's LAN IP. If the
+   new Mac is on a different home connection, also update the `android` A record to that home's
+   public IP.
+3. **On the KaiOS phone, open `https://android.elliscode.com`.** If you copied
+   `server/sessions.json`, you're still logged in. Otherwise log in from home with the code from
+   the server log.
+4. **Check it works:**
    - The Android screen appears.
    - WhatsApp opens your chats.
    - The Play Store is still signed in.
@@ -132,6 +143,7 @@ This shouldn't be needed, because WhatsApp's data comes across unchanged.
 2. `cd ~/git/android-on-kaios && docker compose up -d`. This also re-applies the binder permission
    fix; Android doesn't auto-start without it.
 3. `cd server && npm start`.
+4. `caddy run --config Caddyfile` (from the project folder).
 
 Android needs to run at least every couple of weeks, or WhatsApp logs out linked devices such as
 your iPad's WhatsApp Web.
@@ -156,7 +168,8 @@ docker compose down            # removes the container; the data volume stays
 - **Taps work but no accessibility fallback** (the server log says `a11y.jar` not found):
   `server/a11y.jar` didn't get copied. Copy it over, or rebuild it with
   `./scripts/build-helper.sh`, which needs a JDK: `brew install openjdk`.
-- **The server fails creating its HTTPS certificate:** `server/certs/` didn't get copied. Copy it
-  over, or `brew install openssl` and restart the server to generate a new one.
+- **`https://android.elliscode.com` doesn't load:** check that Caddy is running and says it
+  obtained a certificate, that the router forwards TCP 443 to this Mac, and that the A record
+  points at your home IP (`dig +short android.elliscode.com`).
 - **Want the image rebuilt instead of copied?** `./scripts/build-image.sh` downloads and builds it
   from scratch. Your data backup still restores on top of it.
