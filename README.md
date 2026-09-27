@@ -39,6 +39,12 @@ caddy run --config Caddyfile   # from the project folder, in another terminal (b
 
 Then on the phone, open `https://android.elliscode.com` in the KaiOS browser (from home the first time, to log in).
 
+### Starting everything automatically
+
+`./scripts/install-autostart.sh` registers Android, the server and Caddy as login items (launchd agents). The server and Caddy restart by themselves if they crash. Logs go to `logs/`, and login codes appear in `logs/server.log` (`tail -f logs/server.log`).
+- **Needs:** automatic login (System Settings → Users & Groups) and OrbStack set to start at login.
+- **Uninstall:** `./scripts/install-autostart.sh --uninstall`.
+
 ## Public access and login
 
 The server listens only on `127.0.0.1:8080`. **Caddy** (`Caddyfile`) serves `https://android.elliscode.com` with an automatic Let's Encrypt certificate and forwards to it.

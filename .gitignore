@@ -12,3 +12,4 @@ docker/r8-*.jar
 server/a11y.jar
 server/sessions.json
 server/sessions.json.tmp
+logs/
