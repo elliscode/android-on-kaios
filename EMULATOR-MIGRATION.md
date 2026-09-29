@@ -81,12 +81,15 @@ Run on this Mac (Apple M3 Pro, macOS 26) with the emulator headless, next to red
 - Key 9 → `POST /photo` in `server/index.js`: sharp normalises and rotates the image, it's pushed
   to `/sdcard/DCIM/Camera`, then `scan_file` indexes it.
 - These features should work unchanged on the emulator: tap plus accessibility-click fallback
-  (`helper/A11yClick.java`, pushed as `/data/local/tmp/a11y.jar`), text box, `/field`, scroll,
+  (`helper/A11yClick.java`, pushed in `/data/local/tmp/helpers.jar`), text box, `/field`, scroll,
   pan, notifications, `/text` via ADBKeyBoard. **Re-verify each one.**
 - Redroid-only things to drop or make conditional:
   - `binder-perms` and the `/sys/module` fake (compose only)
   - the Bluetooth / telephony overlays (image only)
   - the letterbox tweak in `configure()`: keep it if the emulator letterboxes too; check this
+  - secure-screen capture (`helper/ScreenCap.java`) runs as root via `su`. The Google Play images
+    have no root, so capture falls back to `screencap` and `FLAG_SECURE` screens (Chick-fil-A's QR
+    code) show as missing there
   - the mock location in `index.js`: replace with `adb emu geo fix <lng> <lat>`, which uses the
     emulator's real GPS path and isn't flagged as a test provider. **Note the argument order is
     longitude then latitude.**
@@ -125,7 +128,7 @@ Run on this Mac (Apple M3 Pro, macOS 26) with the emulator headless, next to red
 - Key 9 with a QR photo, then open the AOSP camera: decode a screencap with jsQR (see how the test
   did it) to confirm the whole code is visible.
 - Every existing feature through the phone page: tap, text box, scroll, pan, location (7), photo
-  (9), notifications (1).
+  (9), notifications (4).
 - WhatsApp: Linked devices → Link a device → scanner reads a QR photographed from the iPad.
 
 ## Risks

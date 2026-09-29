@@ -13,6 +13,13 @@ until [ "$($A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" 
 $A shell settings put global verifier_verify_adb_installs 0
 $A shell settings put global package_verifier_enable 0
 
+# Play Services' fused location (which most apps use) needs its own location permissions. Setup
+# grants them on a real phone; redroid skips setup, so without this apps get no location at all
+# (McDonald's finds no nearby restaurant and can't load a code).
+for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION; do
+  $A shell pm grant com.google.android.gms android.permission.$p
+done
+
 # ADBKeyBoard: an IME that accepts text over adb broadcasts (supports Unicode/emoji).
 IME_APK="docker/ADBKeyboard.apk"
 if ! $A shell pm list packages | grep -q com.android.adbkeyboard; then

@@ -1,0 +1,6 @@
+# GNSS HAL (helper/gnss): reports the vendor.gnss.location property as GPS fixes, so apps get a
+# location that isn't marked as mock. Built by scripts/build-gnss.sh.
+service vendor.gnss-kaios /vendor/bin/hw/android.hardware.gnss-service.kaios
+    class hal
+    user nobody
+    group nobody

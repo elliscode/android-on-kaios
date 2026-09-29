@@ -234,7 +234,7 @@
   // Keys (ignored while typing in the text box):
   //   2 = scroll Android up, 0 = scroll Android down, 8 = pan top -> middle -> bottom -> middle -> top,
   //   7 = share the phone's location with Android, 9 = take a photo into Android's gallery,
-  //   1 = open/close Android's notification shade.
+  //   4 = open/close Android's notification shade. (1 is left alone: it's the KaiOS browser's zoom.)
   var SCROLL_KEYS = { '2': 'up', '0': 'down' };
 
   document.addEventListener('keydown', function (e) {
@@ -244,7 +244,7 @@
       shareLocation();
       return;
     }
-    if (e.key === '1') {
+    if (e.key === '4') {
       e.preventDefault();
       post('/notifications', {});
       return;

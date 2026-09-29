@@ -44,7 +44,7 @@ async function doCapture() {
     keyboard = await adb.keyboardShown();
   } catch (err) {
     console.error('capture failed:', err.message.trim());
-    await connect();
+    if (!(await adb.isConnected())) await connect();
   }
 }
 
@@ -65,7 +65,15 @@ function validLocation(l) {
     Number.isFinite(l.accuracy) && l.accuracy > 0;
 }
 
+// Whether Android has the GNSS HAL; checked again after each (re)connect.
+let gnss = null;
+
 async function applyLocation() {
+  if (gnss === null) {
+    gnss = await adb.hasGnss();
+    if (gnss) await adb.removeMockLocation();
+  }
+  if (gnss) return adb.setGnssLocation(location.lat, location.lng, location.accuracy);
   try {
     await adb.setMockLocation(location.lat, location.lng, location.accuracy);
   } catch (err) {
@@ -78,6 +86,7 @@ async function applyLocation() {
 // adb connect plus everything Android forgets on reboot.
 async function connect() {
   await adb.connect();
+  gnss = null;
   await applyLocation().catch((err) => console.error('location failed:', err.message.trim()));
 }
 
@@ -134,6 +143,12 @@ app.get('/login.js', (req, res) => {
 });
 
 app.post('/login', auth.login);
+
+// Browsers ask for /favicon.ico whatever the page links, so both paths serve the PNG.
+app.get(['/favicon.png', '/favicon.ico'], (req, res) => {
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.type('png').sendFile(path.join(PUBLIC_DIR, 'favicon.png'));
+});
 
 // Everything below requires a session cookie plus the X-CSRF-Token header.
 app.use(auth.requireSessionAndCsrf);

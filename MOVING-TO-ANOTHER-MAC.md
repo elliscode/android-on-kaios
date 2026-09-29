@@ -31,7 +31,7 @@ Open **OrbStack** once after installing it and finish its first-run setup, so th
 works.
 
 You don't need Java, Python or the Android SDK. The prebuilt files (the Android image and
-`server/a11y.jar`) come with you.
+`server/helpers.jar`) come with you.
 
 ## Step 1: Pack everything up (on the old Mac)
 
@@ -61,7 +61,7 @@ You don't need Java, Python or the Android SDK. The prebuilt files (the Android 
      ~/git/android-on-kaios/ ~/Desktop/android-move/android-on-kaios/
    ```
    This includes `backups/` (your data), `server/sessions.json` (so your phone stays logged in),
-   `server/location.json` (your shared location), `server/a11y.jar`, `Caddyfile`, and the
+   `server/location.json` (your shared location), `server/helpers.jar`, `Caddyfile`, and the
    `docker/` overlays.
 
 5. **Move `~/Desktop/android-move` to the new Mac:** use an external drive, AirDrop, or
@@ -165,9 +165,10 @@ docker compose down            # removes the container; the data volume stays
 - **`docker compose up` fails, or Android never boots:** check that OrbStack is running
   (`docker ps`). Then look at `docker ps -a` and `docker logs android`. The OrbStack kernel
   workarounds in the README (binder, lmkd, Bluetooth) apply the same way on any Mac with OrbStack.
-- **Taps work but no accessibility fallback** (the server log says `a11y.jar` not found):
-  `server/a11y.jar` didn't get copied. Copy it over, or rebuild it with
-  `./scripts/build-helper.sh`, which needs a JDK: `brew install openjdk`.
+- **Taps work but no accessibility fallback, or secure screens (Chick-fil-A's QR code) are
+  missing** (the server log says `helpers.jar` not found, or `screen helper exited`):
+  `server/helpers.jar` didn't get copied. Copy it over, or rebuild it with
+  `./scripts/build-helper.sh` (uses a local JDK, or a JDK container if there isn't one).
 - **`https://android.elliscode.com` doesn't load:** check that Caddy is running and says it
   obtained a certificate, that the router forwards TCP 443 to this Mac, and that the A record
   points at your home IP (`dig +short android.elliscode.com`).

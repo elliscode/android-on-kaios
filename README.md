@@ -13,7 +13,7 @@ KaiOS browser --HTTPS--> Caddy (:443, android.elliscode.com) --> Node server (12
 - The phone polls `/frame` every 1000 ms. The server hashes each raw screenshot and only sends a JPEG when it changed (else `204`).
 - Clicking the screenshot taps the same spot on Android. If the screen hasn't changed at all 700 ms later (some screens, like WhatsApp registration, ignore simulated touches), the server retries it as an accessibility click on the element there, the way a screen reader does (`helper/A11yClick.java`).
 - Key **7** sends the phone's own location to Android (GPS and network location are replaced by a fixed point, since the container has none). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs HTTPS, because browsers only allow location on secure pages.
-- Key **1** opens or closes Android's notification shade.
+- Key **4** opens or closes Android's notification shade. (Key 1 is left to the KaiOS browser, which uses it for zoom.)
 - Key **9** opens the phone's camera (or photo picker). The photo is uploaded, saved to Android's `DCIM/Camera` and indexed, so you can attach it from the gallery in any app. There's no live camera passthrough, because Android here has no camera HAL.
 - Key **8** pans the view in half-screen steps: top → middle → bottom → middle → top. Key **0** scrolls the app down and **2** scrolls it up (a slow swipe of about 60% of one half).
 - When Android shows its keyboard, a native text box appears at the top, pre-filled with the field's current text (all selected: type to replace it, or move the cursor to edit it). Enter replaces the Android field's text with the box's; Enter without changes presses Enter on Android. Backspace on an empty box, Back/Escape, or clicking the screenshot closes it. (For an empty field, Android may report its grey placeholder as text, so that shows up pre-filled; just type over it.)
@@ -27,10 +27,11 @@ Planned (not started): moving to the official Android Emulator for a virtual cam
 Needs OrbStack, `adb`, and Node 18+.
 
 ```sh
+./scripts/build-gnss.sh        # once: builds the GPS HAL into docker/overlay (uses a Docker toolchain)
 ./scripts/build-image.sh       # once: builds redroid-gapps:14
 docker compose up -d           # first boot takes ~2 min
 ./scripts/setup-device.sh      # installs ADBKeyBoard IME, sideloads anything in ./apks
-./scripts/build-helper.sh      # once: builds server/a11y.jar (accessibility-click fallback; needs a JDK)
+./scripts/build-helper.sh      # once: builds server/helpers.jar (accessibility clicks, secure-screen capture)
 cd server && npm install && npm start
 caddy run --config Caddyfile   # from the project folder, in another terminal (brew install caddy)
 ```
@@ -92,6 +93,9 @@ OrbStack's Linux kernel differs from what redroid expects. Each of these was a b
 | No telephony feature → WhatsApp only offers companion (tablet) mode | `docker/overlay/.../android-on-kaios-telephony.xml` declares phone hardware (no real modem/SIM) |
 | WhatsApp's registration screen ignores injected touches (anti-automation) | Taps with no visible effect are retried as accessibility clicks |
 | Near-square display → portrait-locked apps (McDonald's) letterboxed into a narrow column | Server sets letterbox to use the display aspect ratio on every adb connect (resets on boot) |
+| Play Services has no location permissions (setup wizard is skipped) → its fused location returns nothing, so apps like McDonald's find no nearby restaurant and can't load a code | `setup-device.sh` grants them to `com.google.android.gms` |
+| No GPS hardware; test-provider locations are all marked mock | A GNSS HAL (`helper/gnss`, built by `build-gnss.sh`) reports the location the server sets (`vendor.gnss.location`) as real GPS fixes |
+| Apps mark some screens `FLAG_SECURE` (Chick-fil-A's QR code) → `screencap` refuses to capture them | A root helper (`helper/ScreenCap.java`, kept running) captures through WindowManager with secure layers included; falls back to `screencap` if it fails |
 
 ## API
 

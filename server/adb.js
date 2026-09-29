@@ -1,7 +1,7 @@
 // Thin wrappers around the `adb` CLI. All commands go through execFile with argument
 // arrays, so nothing from the client is ever interpolated into a host shell.
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const SERIAL = process.env.ADB_SERIAL || 'localhost:5555';
 
@@ -25,6 +25,12 @@ function connect() {
   }).then(configure);
 }
 
+function isConnected() {
+  return new Promise((resolve) => {
+    execFile('adb', ['-s', SERIAL, 'get-state'], (err, stdout) => resolve(!err && stdout.trim() === 'device'));
+  });
+}
+
 // Runtime window settings that Android resets on every boot, so they're reapplied on each connect.
 // The display is nearly square (240x276 shape), so Android letterboxes portrait-locked apps (e.g.
 // McDonald's) into a narrow column. This makes letterboxed apps use the full display instead.
@@ -32,9 +38,13 @@ function configure() {
   return Promise.all([
     adb(['shell', 'cmd', 'window', 'set-letterbox-style',
       '--isDisplayAspectRatioEnabledForFixedOrientationLetterbox', 'true']).catch(() => {}),
-    adb(['push', A11Y_JAR, A11Y_DEVICE_JAR]).catch(() => {}),
+    adb(['push', HELPERS_JAR, HELPERS_DEVICE_JAR]).catch(() => {}),
   ]);
 }
+
+// Java helpers (helper/*.java, built by scripts/build-helper.sh), pushed on every connect.
+const HELPERS_JAR = path.join(__dirname, 'helpers.jar');
+const HELPERS_DEVICE_JAR = '/data/local/tmp/helpers.jar';
 
 // Only one UiAutomation (accessibility) connection can exist at a time, so the UI dump and the
 // accessibility click run one after another.
@@ -47,19 +57,94 @@ function withUiAutomation(fn) {
 
 // Accessibility click (helper/A11yClick.java): clicks the element at a point the way a screen
 // reader does. Used when an app ignores injected touches (e.g. WhatsApp's registration screen).
-const A11Y_JAR = path.join(__dirname, 'a11y.jar');
-const A11Y_DEVICE_JAR = '/data/local/tmp/a11y.jar';
-
 function a11yClick(x, y) {
   return withUiAutomation(async () => {
-    const out = await adb(['shell', 'CLASSPATH=' + A11Y_DEVICE_JAR + ':/system/framework/uiautomator.jar',
+    const out = await adb(['shell', 'CLASSPATH=' + HELPERS_DEVICE_JAR + ':/system/framework/uiautomator.jar',
       'app_process', '/system/bin', 'A11yClick', String(x), String(y)]);
     return JSON.parse(out.toString().trim().split('\n').pop());
   });
 }
 
-// Raw RGBA framebuffer. Android 10+ header is 16 bytes: width, height, format, colorspace.
+// Screen capture helper (helper/ScreenCap.java), kept running as root. Unlike screencap it also
+// captures FLAG_SECURE windows (e.g. Chick-fil-A's QR code), which screencap refuses to capture.
+// Each newline on its stdin returns one frame in screencap's raw format. Needs `su` (redroid is a
+// userdebug build); if it fails, capture falls back to screencap and retries the helper later.
+const SECURE_CAPTURE_TIMEOUT_MS = 5000;
+const SECURE_CAPTURE_RETRY_MS = 30000;
+
+let helper = null; // { proc, chunks, length, pending }
+let secureCaptureRetryAt = 0;
+
+function startHelper() {
+  const proc = spawn('adb', ['-s', SERIAL, 'shell', '-T',
+    "su 0 sh -c 'CLASSPATH=" + HELPERS_DEVICE_JAR + " app_process /system/bin ScreenCap'"]);
+  const h = { proc, chunks: [], length: 0, pending: null };
+  proc.stdout.on('data', (chunk) => {
+    h.chunks.push(chunk);
+    h.length += chunk.length;
+    readFrame(h);
+  });
+  proc.stderr.on('data', (d) => console.error('screen helper:', d.toString().trim()));
+  proc.stdin.on('error', () => {}); // the exit handler reports it
+  const exited = (err) => {
+    if (helper === h) helper = null;
+    settle(h, new Error('screen helper exited' + (err ? ': ' + err.message : '')));
+  };
+  proc.on('error', exited); // adb couldn't be started
+  proc.on('exit', () => exited());
+  return h;
+}
+
+// Resolves the pending request once a whole frame (header plus pixels) has arrived.
+function readFrame(h) {
+  if (h.length < 16) return;
+  if (h.chunks.length > 1) h.chunks = [Buffer.concat(h.chunks)];
+  const buf = h.chunks[0];
+  const width = buf.readUInt32LE(0);
+  const height = buf.readUInt32LE(4);
+  const size = 16 + width * height * 4;
+  if (h.length < size) return;
+  h.chunks = h.length > size ? [buf.subarray(size)] : [];
+  h.length -= size;
+  if (!width || !height) return settle(h, new Error('screen helper capture failed'));
+  settle(h, null, { width, height, pixels: buf.subarray(16, size) });
+}
+
+function settle(h, err, shot) {
+  const p = h.pending;
+  if (!p) return;
+  h.pending = null;
+  clearTimeout(p.timer);
+  if (err) p.reject(err);
+  else p.resolve(shot);
+}
+
+function secureCapture() {
+  if (!helper) helper = startHelper();
+  const h = helper;
+  return new Promise((resolve, reject) => {
+    if (h.pending) return reject(new Error('screen helper busy'));
+    const timer = setTimeout(() => {
+      settle(h, new Error('screen helper timed out'));
+      h.proc.kill(); // a late frame would be taken as the reply to the next request
+    }, SECURE_CAPTURE_TIMEOUT_MS);
+    h.pending = { resolve, reject, timer };
+    h.proc.stdin.write('\n');
+  });
+}
+
+// Raw RGBA framebuffer: { width, height, pixels }.
 async function screencapRaw() {
+  if (Date.now() >= secureCaptureRetryAt) {
+    try {
+      return await secureCapture();
+    } catch (err) {
+      console.error(err.message + '; using screencap (secure windows stay hidden) for now');
+      secureCaptureRetryAt = Date.now() + SECURE_CAPTURE_RETRY_MS;
+      if (helper) helper.proc.kill();
+    }
+  }
+  // Android 10+ header is 16 bytes: width, height, format, colorspace.
   const buf = await adb(['exec-out', 'screencap']);
   const width = buf.readUInt32LE(0);
   const height = buf.readUInt32LE(4);
@@ -125,6 +210,27 @@ async function setMockLocation(lat, lng, accuracy) {
   }
 }
 
+// Test providers mark every location as mock, which some apps ignore (McDonald's finds no nearby
+// restaurants, so it can't make a valid code). The GNSS HAL (helper/gnss/service.cpp, in the
+// image) reports this property as real GPS fixes instead. Test providers would override its "gps"
+// provider, so they're removed when it's running.
+const GNSS_PROPERTY = 'vendor.gnss.location';
+
+async function hasGnss() {
+  const out = await adb(['shell', 'getprop', 'init.svc.vendor.gnss-kaios']);
+  return out.toString().trim() === 'running';
+}
+
+async function removeMockLocation() {
+  for (const p of MOCK_PROVIDERS) {
+    await adb(['shell', 'cmd', 'location', 'providers', 'remove-test-provider', p]).catch(() => {});
+  }
+}
+
+function setGnssLocation(lat, lng, accuracy) {
+  return adb(['shell', 'setprop', GNSS_PROPERTY, lat + ',' + lng + ',' + accuracy]);
+}
+
 // Clears the focused field through ADBKeyBoard (deletes all text around the cursor).
 function clearText() {
   return adb(['shell', 'am', 'broadcast', '-a', 'ADB_CLEAR_TEXT']);
@@ -158,4 +264,4 @@ async function keyboardShown() {
   return /mInputShown=true/.test(out);
 }
 
-module.exports = { connect, a11yClick, pushMedia, toggleNotifications, setupMockLocation, setMockLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };
+module.exports = { connect, isConnected, a11yClick, pushMedia, toggleNotifications, setupMockLocation, setMockLocation, hasGnss, removeMockLocation, setGnssLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };

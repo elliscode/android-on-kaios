@@ -9,7 +9,12 @@ backups/
 server/location.json
 server/certs/
 docker/r8-*.jar
-server/a11y.jar
+server/helpers.jar
 server/sessions.json
 server/sessions.json.tmp
+<<<<<<< Updated upstream
 logs/
+=======
+docker/gnss-build/
+docker/overlay/vendor/bin/hw/android.hardware.gnss-service.kaios
+>>>>>>> Stashed changes
