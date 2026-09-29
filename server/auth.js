@@ -15,7 +15,8 @@ const dns = require('dns');
 const crypto = require('crypto');
 
 const PUBLIC_HOST = process.env.PUBLIC_HOST || 'android.elliscode.com';
-const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
+// Each site (android / iphone) keeps its own sessions: see the start:iphone script in package.json.
+const SESSIONS_FILE = path.resolve(__dirname, process.env.SESSIONS_FILE || 'sessions.json');
 const TOKEN_LENGTH = 128;
 const SESSION_MONTHS = 4;
 const CODE_TTL_MS = 5 * 60 * 1000;

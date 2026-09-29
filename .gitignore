@@ -7,14 +7,15 @@ docker/mindthegapps.zip
 docker/ADBKeyboard.apk
 backups/
 server/location.json
+server/location-iphone.json
 server/certs/
 docker/r8-*.jar
 server/helpers.jar
 server/sessions.json
 server/sessions.json.tmp
-<<<<<<< Updated upstream
+server/sessions-iphone.json
+server/sessions-iphone.json.tmp
 logs/
-=======
 docker/gnss-build/
 docker/overlay/vendor/bin/hw/android.hardware.gnss-service.kaios
->>>>>>> Stashed changes
+/ios/

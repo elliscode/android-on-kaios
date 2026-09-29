@@ -5,7 +5,8 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "start:iphone": "DEVICE=ios PORT=8081 SESSIONS_FILE=sessions-iphone.json LOCATION_FILE=location-iphone.json node index.js"
   },
   "dependencies": {
     "express": "^4.21.2",

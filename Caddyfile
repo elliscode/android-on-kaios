@@ -1,11 +1,17 @@
 # Caddy: HTTPS for the phone page. Run from this folder with:  caddy run --config Caddyfile
-# Needs the android.elliscode.com A record pointing at this home's public IP, and router TCP 443
+# Needs the android.elliscode.com (and iphone.elliscode.com) A records pointing at this home's public IP, and router TCP 443
 # forwarded to this Mac. Caddy gets and renews the Let's Encrypt certificate by itself (port 443
 # only). It passes the real client IP to the server in X-Forwarded-For, which the login's
 # home-network check relies on.
 
 android.elliscode.com {
 	reverse_proxy 127.0.0.1:8080
+}
+
+# The real iPhone (IPHONE.md): the second server instance, `npm run start:iphone` (DEVICE=ios).
+# Needs its own A record, iphone.elliscode.com, pointing at the same home IP.
+iphone.elliscode.com {
+	reverse_proxy 127.0.0.1:8081
 }
 
 # Optional: direct LAN access while DNS/port forwarding isn't set up, or if the router can't loop

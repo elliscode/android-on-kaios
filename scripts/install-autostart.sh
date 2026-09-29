@@ -8,6 +8,11 @@
 # - android: runs scripts/autostart/start-android.sh once per login (waits for OrbStack).
 # - server:  node server/index.js, restarted automatically if it exits.
 # - caddy:   caddy run --config Caddyfile, restarted automatically if it exits.
+# With an iPhone set up (ios/config.env exists, see IPHONE.md), also:
+# - iphone-wda:    scripts/ios/start-wda.sh (WebDriverAgent over USB), restarted if it exits.
+# - iphone-server: the iPhone server (DEVICE=ios on :8081), restarted if it exits.
+# - iphone-resign: scripts/ios/build-wda.sh every 6 days (a free Apple ID's signature lasts 7),
+#                  then restarts iphone-wda.
 # Logs go to logs/*.log in this folder. Login codes are in logs/server.log.
 #
 # Agents only run while you're logged in, so turn on automatic login (System Settings → Users &
@@ -18,6 +23,8 @@ REPO="$(pwd)"
 AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 PREFIX="com.elliscode.android-on-kaios"
 NAMES="android server caddy"
+IPHONE_NAMES="iphone-wda iphone-server iphone-resign"
+[ -f ios/config.env ] && NAMES="$NAMES $IPHONE_NAMES"
 DOMAIN="gui/$(id -u)"
 
 unload() {
@@ -27,6 +34,8 @@ unload() {
 }
 
 if [ "${1:-}" = "--uninstall" ]; then
+  unload
+  NAMES="android server caddy $IPHONE_NAMES"
   unload
   for name in $NAMES; do rm -f "$AGENTS_DIR/$PREFIX.$name.plist"; done
   echo "Autostart removed."
@@ -44,6 +53,8 @@ TOOL_PATH="$(dirname "$NODE"):$(dirname "$CADDY"):$(dirname "$ADB"):$(dirname "$
 mkdir -p "$AGENTS_DIR" "$REPO/logs"
 
 # write_agent <name> <working dir> <keep alive: true|false> <program> [args...]
+# EXTRA: optional plist keys for the next agent (e.g. a StartInterval).
+EXTRA=""
 write_agent() {
   local name=$1 dir=$2 keepalive=$3
   shift 3
@@ -72,7 +83,7 @@ $args  </array>
   <$keepalive/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
-  <key>StandardOutPath</key>
+$EXTRA  <key>StandardOutPath</key>
   <string>$REPO/logs/$name.log</string>
   <key>StandardErrorPath</key>
   <string>$REPO/logs/$name.log</string>
@@ -80,11 +91,23 @@ $args  </array>
 </plist>
 EOF
   plutil -lint -s "$AGENTS_DIR/$PREFIX.$name.plist"
+  EXTRA=""
 }
 
 write_agent android "$REPO" false /bin/bash "$REPO/scripts/autostart/start-android.sh"
 write_agent server "$REPO/server" true "$NODE" index.js
 write_agent caddy "$REPO" true "$CADDY" run --config Caddyfile
+
+if [ -f ios/config.env ]; then
+  need iproxy "brew install libimobiledevice" >/dev/null
+  write_agent iphone-wda "$REPO" true /bin/bash "$REPO/scripts/ios/start-wda.sh"
+  write_agent iphone-server "$REPO/server" true /usr/bin/env DEVICE=ios PORT=8081 \
+    SESSIONS_FILE=sessions-iphone.json LOCATION_FILE=location-iphone.json "$NODE" index.js
+  EXTRA="  <key>StartInterval</key>
+  <integer>518400</integer>
+"
+  write_agent iphone-resign "$REPO" false /bin/bash "$REPO/scripts/ios/resign-wda.sh"
+fi
 
 if [ -n "${NO_LOAD:-}" ]; then
   echo "Wrote agents to $AGENTS_DIR (not loaded)."

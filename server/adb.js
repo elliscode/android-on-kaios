@@ -182,6 +182,20 @@ function keyevent(code) {
   return adb(['shell', 'input', 'keyevent', String(code)]);
 }
 
+function pressEnter() {
+  return keyevent(66); // KEYCODE_ENTER
+}
+
+// Navigation keys from the phone (Call, *, 6).
+const KEYCODES = { home: 3, back: 4, switcher: 187 };
+
+// # = next: a right-to-left swipe through the middle (pages the launcher and carousels). This
+// Android uses 3-button navigation, so there's no edge gesture to mirror like on the iPhone.
+function key(name) {
+  if (name === 'next') return swipe(816, 1104, 144, 1104, 300);
+  return keyevent(KEYCODES[name]);
+}
+
 // Sends Unicode text through the ADBKeyBoard IME. Base64 keeps the payload to [A-Za-z0-9+/=],
 // which is safe for the device-side shell that `adb shell` runs.
 function inputText(text) {
@@ -210,10 +224,9 @@ async function setMockLocation(lat, lng, accuracy) {
   }
 }
 
-// Test providers mark every location as mock, which some apps ignore (McDonald's finds no nearby
-// restaurants, so it can't make a valid code). The GNSS HAL (helper/gnss/service.cpp, in the
-// image) reports this property as real GPS fixes instead. Test providers would override its "gps"
-// provider, so they're removed when it's running.
+// Test providers mark every location as mock, which apps can see. The GNSS HAL
+// (helper/gnss/service.cpp, in the image) reports this property as real GPS fixes instead. Test
+// providers would override its "gps" provider, so they're removed when it's running.
 const GNSS_PROPERTY = 'vendor.gnss.location';
 
 async function hasGnss() {
@@ -264,4 +277,32 @@ async function keyboardShown() {
   return /mInputShown=true/.test(out);
 }
 
-module.exports = { connect, isConnected, a11yClick, pushMedia, toggleNotifications, setupMockLocation, setMockLocation, hasGnss, removeMockLocation, setGnssLocation, screencapRaw, tap, swipe, keyevent, inputText, clearText, focusedFieldText, keyboardShown };
+// Whether Android has the GNSS HAL; checked again after each (re)connect.
+let gnss = null;
+
+// Sets the location apps see: through the GNSS HAL if the image has it, else test providers.
+async function setLocation(lat, lng, accuracy) {
+  if (gnss === null) {
+    gnss = await hasGnss();
+    if (gnss) await removeMockLocation();
+  }
+  if (gnss) return setGnssLocation(lat, lng, accuracy);
+  try {
+    await setMockLocation(lat, lng, accuracy);
+  } catch (err) {
+    // Providers are gone after an Android reboot: set them up again, then retry.
+    await setupMockLocation();
+    await setMockLocation(lat, lng, accuracy);
+  }
+}
+
+// The same interface as ios.js; server/index.js picks one with DEVICE.
+module.exports = {
+  title: 'Android',
+  favicon: 'favicon.png', // in public/
+  capabilities: { a11yFallback: true, photo: true, gps: false },
+  connect: () => { gnss = null; return connect(); },
+  clearLocation: () => Promise.resolve(), // never called: Android always has a location set
+  isConnected, a11yClick, pushMedia, toggleNotifications, setLocation, screencapRaw, tap, swipe,
+  pressEnter, key, inputText, clearText, focusedFieldText, keyboardShown,
+};

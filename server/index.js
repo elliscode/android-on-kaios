@@ -4,17 +4,20 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const sharp = require('sharp');
-const adb = require('./adb');
 const auth = require('./auth');
 
-// Only Caddy (on this Mac) talks to the server; it provides HTTPS for android.elliscode.com.
+// DEVICE picks the backend: adb.js (redroid, android.elliscode.com) or ios.js (a real iPhone via
+// WebDriverAgent, iphone.elliscode.com). Both export the same functions.
+const device = require(process.env.DEVICE === 'ios' ? './ios' : './adb');
+
+// Only Caddy (on this Mac) talks to the server; it provides the HTTPS sites.
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT) || 8080;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const CAPTURE_MS = 1000;
 const IDLE_AFTER_MS = 5000; // stop capturing when no client has polled for this long
 const JPEG_QUALITY = 70;
-const LOCATION_FILE = path.join(__dirname, 'location.json');
+const LOCATION_FILE = path.resolve(__dirname, process.env.LOCATION_FILE || 'location.json');
 const LOCATION_REFRESH_MS = 10000; // re-send so apps waiting for location updates get one
 const DEFAULT_LOCATION = { lat: 38.8977, lng: -77.0365, accuracy: 10 }; // the White House
 
@@ -32,7 +35,7 @@ function capture() {
 
 async function doCapture() {
   try {
-    const shot = await adb.screencapRaw();
+    const shot = await device.screencapRaw();
     const hash = crypto.createHash('sha1').update(shot.pixels).digest('hex');
     if (!frame || frame.hash !== hash) {
       const jpeg = await sharp(shot.pixels, { raw: { width: shot.width, height: shot.height, channels: 4 } })
@@ -41,14 +44,15 @@ async function doCapture() {
         .toBuffer();
       frame = { hash, jpeg, width: shot.width, height: shot.height };
     }
-    keyboard = await adb.keyboardShown();
+    keyboard = await device.keyboardShown();
   } catch (err) {
     console.error('capture failed:', err.message.trim());
-    if (!(await adb.isConnected())) await connect();
+    if (!(await device.isConnected())) await connect();
   }
 }
 
-// Location Android reports to apps. Set from the phone's GPS (key 7), saved across restarts.
+// Location the device reports to apps. Set from the phone's GPS (key 7), saved across restarts.
+// null (nothing shared yet) on a device with its own GPS (the iPhone): it keeps its real location.
 let location = loadLocation();
 
 function loadLocation() {
@@ -56,7 +60,7 @@ function loadLocation() {
     const l = JSON.parse(fs.readFileSync(LOCATION_FILE, 'utf8'));
     if (validLocation(l)) return l;
   } catch (err) { /* no saved location yet */ }
-  return DEFAULT_LOCATION;
+  return device.capabilities.gps ? null : DEFAULT_LOCATION;
 }
 
 function validLocation(l) {
@@ -65,32 +69,18 @@ function validLocation(l) {
     Number.isFinite(l.accuracy) && l.accuracy > 0;
 }
 
-// Whether Android has the GNSS HAL; checked again after each (re)connect.
-let gnss = null;
-
-async function applyLocation() {
-  if (gnss === null) {
-    gnss = await adb.hasGnss();
-    if (gnss) await adb.removeMockLocation();
-  }
-  if (gnss) return adb.setGnssLocation(location.lat, location.lng, location.accuracy);
-  try {
-    await adb.setMockLocation(location.lat, location.lng, location.accuracy);
-  } catch (err) {
-    // Providers are gone after an Android reboot: set them up again, then retry.
-    await adb.setupMockLocation();
-    await adb.setMockLocation(location.lat, location.lng, location.accuracy);
-  }
+function applyLocation() {
+  if (!location) return device.clearLocation();
+  return device.setLocation(location.lat, location.lng, location.accuracy);
 }
 
-// adb connect plus everything Android forgets on reboot.
+// Connect plus everything the device forgets on reboot.
 async function connect() {
-  await adb.connect();
-  gnss = null;
+  await device.connect();
   await applyLocation().catch((err) => console.error('location failed:', err.message.trim()));
 }
 
-setInterval(() => { applyLocation().catch(() => {}); }, LOCATION_REFRESH_MS);
+setInterval(() => { if (location) applyLocation().catch(() => {}); }, LOCATION_REFRESH_MS);
 
 function loop() {
   timer = null;
@@ -119,9 +109,14 @@ function readPublic(name) {
   return fs.readFileSync(path.join(PUBLIC_DIR, name), 'utf8');
 }
 
+// The page title names the device ("Android" / "iPhone").
+function withTitle(html) {
+  return html.replace('<title>Android</title>', () => '<title>' + device.title + '</title>');
+}
+
 // The app page with the session's CSRF token and style.css / app.js inlined.
 function appPage(csrf) {
-  return readPublic('index.html')
+  return withTitle(readPublic('index.html'))
     .replace('<!--CSRF-->', () => '<meta name="csrf" content="' + csrf + '">')
     .replace('<!--STYLE-->', () => '<style>\n' + readPublic('style.css') + '</style>')
     .replace('<!--SCRIPT-->', () => '<script>\n' + readPublic('app.js') + '</script>');
@@ -133,7 +128,7 @@ app.get('/', (req, res) => {
   const s = auth.session(req);
   if (s) return res.type('html').send(appPage(s.csrf));
   const issued = auth.startAttempt(req, res);
-  res.type('html').send(readPublic('login.html')
+  res.type('html').send(withTitle(readPublic('login.html'))
     .replace('<!--NOTICE-->', () => issued ? '' : 'Login is only available from the home network'));
 });
 
@@ -144,10 +139,10 @@ app.get('/login.js', (req, res) => {
 
 app.post('/login', auth.login);
 
-// Browsers ask for /favicon.ico whatever the page links, so both paths serve the PNG.
+// Browsers ask for /favicon.ico whatever the page links, so both paths serve the device's PNG.
 app.get(['/favicon.png', '/favicon.ico'], (req, res) => {
   res.set('Cache-Control', 'public, max-age=86400');
-  res.type('png').sendFile(path.join(PUBLIC_DIR, 'favicon.png'));
+  res.type('png').sendFile(path.join(PUBLIC_DIR, device.favicon));
 });
 
 // Everything below requires a session cookie plus the X-CSRF-Token header.
@@ -180,16 +175,17 @@ app.post('/tap', async (req, res) => {
   try {
     await capture();
     before = frame && frame.hash;
-    await adb.tap(tx, ty);
+    await device.tap(tx, ty);
     res.status(204).end();
   } catch (err) {
     return res.status(502).json({ error: err.message });
   }
+  if (!device.capabilities.a11yFallback) return setTimeout(recaptureSoon, 300);
   setTimeout(async () => {
     await capture();
     if (!frame || frame.hash !== before) return recaptureSoon(); // the tap did something
     try {
-      const result = await adb.a11yClick(tx, ty);
+      const result = await device.a11yClick(tx, ty);
       console.log('tap ignored at ' + tx + ',' + ty + '; accessibility click:', JSON.stringify(result));
     } catch (err) {
       console.error('accessibility click failed:', err.message.trim());
@@ -213,8 +209,8 @@ app.post('/scroll', async (req, res) => {
   const bottom = Math.round(h * (0.5 + SCROLL_FRACTION / 2));
   try {
     // Scrolling down means dragging the content up, from bottom to top.
-    if (dir === 'down') await adb.swipe(x, bottom, x, top, SCROLL_MS);
-    else await adb.swipe(x, top, x, bottom, SCROLL_MS);
+    if (dir === 'down') await device.swipe(x, bottom, x, top, SCROLL_MS);
+    else await device.swipe(x, top, x, bottom, SCROLL_MS);
     recaptureSoon();
     res.status(204).end();
   } catch (err) {
@@ -226,7 +222,7 @@ app.post('/scroll', async (req, res) => {
 app.get('/field', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   try {
-    res.json({ text: await adb.focusedFieldText() });
+    res.json({ text: await device.focusedFieldText() });
   } catch (err) {
     res.json({ text: '' }); // e.g. uiautomator can't dump while the screen is animating
   }
@@ -254,6 +250,7 @@ app.post('/location', async (req, res) => {
 // Photo from the phone's camera (key 9): normalised to JPEG and saved to Android's camera folder,
 // so it can be attached from the gallery in any app.
 app.post('/photo', express.raw({ type: 'image/*', limit: '25mb' }), async (req, res) => {
+  if (!device.capabilities.photo) return res.status(501).json({ error: 'Photos aren\'t supported on ' + device.title });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'image body required' });
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -264,7 +261,7 @@ app.post('/photo', express.raw({ type: 'image/*', limit: '25mb' }), async (req, 
     // rotate() applies the EXIF orientation; re-encoding also rejects anything that isn't an image.
     // withMetadata() keeps EXIF such as the time taken (orientation is reset after rotating).
     await sharp(req.body).rotate().withMetadata().jpeg({ quality: 90 }).toFile(tmp);
-    await adb.pushMedia(tmp, '/sdcard/DCIM/Camera/' + name);
+    await device.pushMedia(tmp, '/sdcard/DCIM/Camera/' + name);
     res.json({ name });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -275,7 +272,7 @@ app.post('/photo', express.raw({ type: 'image/*', limit: '25mb' }), async (req, 
 
 app.post('/notifications', async (req, res) => {
   try {
-    const open = await adb.toggleNotifications();
+    const open = await device.toggleNotifications();
     recaptureSoon();
     res.json({ open });
   } catch (err) {
@@ -288,9 +285,22 @@ app.post('/text', async (req, res) => {
   const replace = !!(req.body && req.body.replace);
   const enter = !!(req.body && req.body.enter);
   try {
-    if (replace) await adb.clearText();
-    if (text) await adb.inputText(text);
-    if (enter) await adb.keyevent(66); // KEYCODE_ENTER
+    if (replace) await device.clearText();
+    if (text) await device.inputText(text);
+    if (enter) await device.pressEnter();
+    recaptureSoon();
+    res.status(204).end();
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Navigation keys from the phone: Call = home, * = back, # = next (swipe from the right), 6 = app switcher.
+app.post('/key', async (req, res) => {
+  const name = req.body && req.body.name;
+  if (!['home', 'back', 'next', 'switcher'].includes(name)) return res.status(400).json({ error: 'unknown key' });
+  try {
+    await device.key(name);
     recaptureSoon();
     res.status(204).end();
   } catch (err) {

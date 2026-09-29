@@ -205,16 +205,17 @@
     photo.value = ''; // allow choosing another photo later
   });
 
-  // Top offsets (px) of the visible window: every half screen from the top down to the bottom.
-  // For 240x552 that's [0, 138, 276] = top, middle, bottom.
+  // Top offsets (px) of the visible window, evenly spaced from the top to the bottom, at most half
+  // a screen apart. The last one shows the frame's bottom edge exactly, whatever its aspect ratio.
+  // 240x552 (Android) -> [0, 138, 276]; 240x520 (iPhone) -> [0, 122, 244] = top, middle, bottom.
   function panOffsets() {
     var max = 0;
     if (screen.naturalWidth) {
       max = Math.max(0, Math.round(screen.naturalHeight * VIEW_WIDTH / screen.naturalWidth) - VIEW_HEIGHT);
     }
-    var offsets = [];
-    for (var y = 0; y < max; y += VIEW_HEIGHT / 2) offsets.push(y);
-    offsets.push(max);
+    var steps = Math.ceil(max / (VIEW_HEIGHT / 2));
+    var offsets = [0];
+    for (var i = 1; i <= steps; i++) offsets.push(Math.round(max * i / steps));
     return offsets;
   }
 
@@ -234,8 +235,10 @@
   // Keys (ignored while typing in the text box):
   //   2 = scroll Android up, 0 = scroll Android down, 8 = pan top -> middle -> bottom -> middle -> top,
   //   7 = share the phone's location with Android, 9 = take a photo into Android's gallery,
-  //   4 = open/close Android's notification shade. (1 is left alone: it's the KaiOS browser's zoom.)
+  //   4 = open/close the notification shade (1 is left alone: it's the KaiOS browser's zoom),
+  //   Call = Home, * = Back (swipe in from the left), # = swipe in from the right, 6 = app switcher.
   var SCROLL_KEYS = { '2': 'up', '0': 'down' };
+  var NAV_KEYS = { 'Call': 'home', '*': 'back', '#': 'next', '6': 'switcher' };
 
   document.addEventListener('keydown', function (e) {
     if (textBoxOpen()) return;
@@ -257,6 +260,11 @@
     if (e.key === '8') {
       e.preventDefault();
       panNext();
+      return;
+    }
+    if (NAV_KEYS[e.key]) {
+      e.preventDefault();
+      post('/key', { name: NAV_KEYS[e.key] });
       return;
     }
     var dir = SCROLL_KEYS[e.key];
