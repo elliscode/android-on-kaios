@@ -111,13 +111,16 @@ async function tap(x, y) {
   await command('POST', '/wda/tap', { x: p.x, y: p.y });
 }
 
-// Scroll: a steady drag that stops at the end (the hold stops any fling), like adb's slow swipe.
+// Vertical: a steady drag that stops at the end (the hold stops any fling), like adb's slow swipe,
+// so a scroll moves by the swipe distance. Sideways: no hold, so pages (home screen, carousels)
+// snap over even when the swipe is shortened at the screen edge.
 async function swipe(x1, y1, x2, y2, ms) {
   await ensureSession();
   const from = toPoint(x1, y1);
   const to = toPoint(x2, y2);
   const velocity = Math.hypot(to.x - from.x, to.y - from.y) / (ms / 1000);
-  await drag(from, to, velocity, 0.3);
+  const sideways = Math.abs(to.x - from.x) > Math.abs(to.y - from.y);
+  await drag(from, to, velocity, sideways ? 0 : 0.3);
 }
 
 async function inputText(text) {
@@ -169,9 +172,8 @@ async function toggleNotifications() {
   return notificationsOpen;
 }
 
-// Call = home, * = back (iOS's swipe-from-left-edge gesture; iOS has no Back button),
-// # = next (the mirror: swipe in from the right edge, e.g. from the Today View back to the home
-// screen, or to the next home screen page), 6 = app switcher (swipe up from the bottom and hold).
+// Call = home, 6 = app switcher (swipe up from the bottom and hold). (* and # are swipes from the
+// cursor, see /scroll; iOS's Back gesture is * with the cursor at the left edge.)
 async function key(name) {
   if (name === 'home') {
     notificationsOpen = false;
@@ -179,8 +181,6 @@ async function key(name) {
   }
   await ensureSession();
   const { widthPt: w, heightPt: h } = screen;
-  if (name === 'back') return drag({ x: 2, y: h / 2 }, { x: w * 0.8, y: h / 2 }, 1500, 0);
-  if (name === 'next') return drag({ x: w - 2, y: h / 2 }, { x: w * 0.2, y: h / 2 }, 1500, 0);
   if (name === 'switcher') return drag({ x: w / 2, y: h - 2 }, { x: w / 2, y: h * 0.6 }, 600, 1);
   throw new Error('unknown key ' + name);
 }

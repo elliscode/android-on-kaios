@@ -14,9 +14,10 @@ KaiOS browser --HTTPS--> Caddy (:443, android.elliscode.com) --> Node server (12
 - Clicking the screenshot taps the same spot on Android. If the screen hasn't changed at all 700 ms later (some screens, like WhatsApp registration, ignore simulated touches), the server retries it as an accessibility click on the element there, the way a screen reader does (`helper/A11yClick.java`).
 - Key **7** sends the phone's own location to Android, which reports it as a real GPS fix (the container has no GPS; see the GNSS HAL below). Until then it's the White House. It's saved in `server/location.json` and reapplied after reboots. This needs HTTPS, because browsers only allow location on secure pages.
 - Key **4** opens or closes Android's notification shade. (Key 1 is left to the KaiOS browser, which uses it for zoom.)
-- **Call** goes to the home screen, **\*** is Back, **#** swipes right-to-left (next launcher page, carousels), and **6** opens the app switcher (recent apps).
+- **Call** goes to the home screen and **6** opens the app switcher (recent apps). Android's own Back button is on screen.
 - Key **9** opens the phone's camera (or photo picker). The photo is uploaded, saved to Android's `DCIM/Camera` and indexed, so you can attach it from the gallery in any app. There's no live camera passthrough, because Android here has no camera HAL.
-- Key **8** pans the view in half-screen steps: top → middle → bottom → middle → top. Key **0** scrolls the app down and **2** scrolls it up (a slow swipe of about 60% of one half).
+- Key **8** pans the view: top → middle → bottom → middle → top, in evenly spaced steps of at most half a screen.
+- Swipes start **where the KaiOS cursor is**, so with two scrollable panes the one under the cursor moves. **0** scrolls down and **2** scrolls up (a slow swipe of about 60% of one half); **\*** swipes left-to-right and **#** right-to-left (previous / next page, carousels). Near an edge, a swipe is shortened to stay on the screen.
 - When Android shows its keyboard, a native text box appears at the top, pre-filled with the field's current text (all selected: type to replace it, or move the cursor to edit it). Enter replaces the Android field's text with the box's; Enter without changes presses Enter on Android. Backspace on an empty box, Back/Escape, or clicking the screenshot closes it. (For an empty field, Android may report its grey placeholder as text, so that shows up pre-filled; just type over it.)
 
 The same page can also control a **real iPhone** at `iphone.elliscode.com`: see [IPHONE.md](IPHONE.md).
@@ -109,10 +110,10 @@ All endpoints except `GET /`, `GET /login.js` and `POST /login` need the session
 | `POST /login {code}` | Exchanges the current code for a session (home network only; 2 per hour) |
 | `GET /frame?h=<hash>` | `200` JPEG (full Android resolution) or `204` if `h` is current. Headers: `X-Hash`, `X-Keyboard: 0\|1` |
 | `POST /tap {x, y}` | Android coordinates |
-| `POST /scroll {dir}` | `dir` is `up` or `down`; swipes through the middle of the screen |
+| `POST /scroll {dir, x, y}` | `dir` (where the content goes) is `up`, `down`, `left` or `right`; the swipe starts at `x, y` (device px, e.g. the cursor), or the middle if omitted |
 | `GET /field` | `{text}` of the focused Android field (~2 s, via a UI dump) |
 | `POST /notifications` | Toggles the notification shade |
-| `POST /key {name}` | `home`, `back`, `next` or `switcher` |
+| `POST /key {name}` | `home` or `switcher` |
 | `POST /photo` (image body) | Saves the image to Android's camera folder as JPEG |
 | `GET/POST /location {lat, lng, accuracy}` | Location Android reports to apps |
 | `POST /text {text, replace, enter}` | `replace` clears the field first; types Unicode text via ADBKeyBoard; `enter` sends KEYCODE_ENTER |

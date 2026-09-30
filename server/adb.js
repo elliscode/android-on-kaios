@@ -186,13 +186,11 @@ function pressEnter() {
   return keyevent(66); // KEYCODE_ENTER
 }
 
-// Navigation keys from the phone (Call, *, 6).
-const KEYCODES = { home: 3, back: 4, switcher: 187 };
+// Navigation keys from the phone (Call, 6). Android's own Back button is on screen (3-button
+// navigation); * and # are swipes from the cursor (see /scroll).
+const KEYCODES = { home: 3, switcher: 187 };
 
-// # = next: a right-to-left swipe through the middle (pages the launcher and carousels). This
-// Android uses 3-button navigation, so there's no edge gesture to mirror like on the iPhone.
 function key(name) {
-  if (name === 'next') return swipe(816, 1104, 144, 1104, 300);
   return keyevent(KEYCODES[name]);
 }
 

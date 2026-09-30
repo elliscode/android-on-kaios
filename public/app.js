@@ -129,10 +129,24 @@
       return;
     }
     dismissed = false;
+    cursor = { x: e.clientX, y: e.clientY };
     if (!screen.naturalWidth) return; // no frame yet
+    post('/tap', framePoint(e.clientX, e.clientY));
+  });
+
+  // Device (frame) pixels for a point on the phone's screen, allowing for the pan (key 8).
+  function framePoint(clientX, clientY) {
     var scale = screen.naturalWidth / VIEW_WIDTH;
-    var y = e.clientY + panOffsets()[pan];
-    post('/tap', { x: Math.round(e.clientX * scale), y: Math.round(y * scale) });
+    var x = Math.min(Math.max(clientX, 0), VIEW_WIDTH - 1);
+    var y = Math.min(Math.max(clientY, 0), VIEW_HEIGHT - 1) + panOffsets()[pan];
+    return { x: Math.round(x * scale), y: Math.round(y * scale) };
+  }
+
+  // Where the KaiOS cursor is (its virtual pointer sends mouse events), so swipes start there.
+  // Until it moves, the middle of the visible window.
+  var cursor = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
+  document.addEventListener('mousemove', function (e) {
+    cursor = { x: e.clientX, y: e.clientY };
   });
 
   kb.addEventListener('keydown', function (e) {
@@ -233,12 +247,14 @@
   }
 
   // Keys (ignored while typing in the text box):
-  //   2 = scroll Android up, 0 = scroll Android down, 8 = pan top -> middle -> bottom -> middle -> top,
+  //   2 / 0 = scroll up / down, * / # = swipe left / right (all starting at the cursor),
+  //   8 = pan top -> middle -> bottom -> middle -> top,
   //   7 = share the phone's location with Android, 9 = take a photo into Android's gallery,
   //   4 = open/close the notification shade (1 is left alone: it's the KaiOS browser's zoom),
-  //   Call = Home, * = Back (swipe in from the left), # = swipe in from the right, 6 = app switcher.
-  var SCROLL_KEYS = { '2': 'up', '0': 'down' };
-  var NAV_KEYS = { 'Call': 'home', '*': 'back', '#': 'next', '6': 'switcher' };
+  //   Call = Home, 6 = app switcher.
+  // Scroll directions say where the content goes: 'down' swipes up, 'right' swipes to the left.
+  var SCROLL_KEYS = { '2': 'up', '0': 'down', '*': 'left', '#': 'right' };
+  var NAV_KEYS = { 'Call': 'home', '6': 'switcher' };
 
   document.addEventListener('keydown', function (e) {
     if (textBoxOpen()) return;
@@ -270,7 +286,9 @@
     var dir = SCROLL_KEYS[e.key];
     if (!dir) return;
     e.preventDefault();
-    post('/scroll', { dir: dir });
+    if (!screen.naturalWidth) return; // no frame yet
+    var start = framePoint(cursor.x, cursor.y);
+    post('/scroll', { dir: dir, x: start.x, y: start.y });
   });
 
   // Keep the pan valid if the frame size changes (e.g. Android resolution changed).

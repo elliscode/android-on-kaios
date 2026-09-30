@@ -194,23 +194,30 @@ app.post('/tap', async (req, res) => {
   }, TAP_FALLBACK_MS);
 });
 
-// Scrolls by swiping vertically through the middle of the screen. A slow swipe (no fling)
-// moves the content by about the swipe distance, so each press is predictable.
+// Scrolls (2 / 0) and swipes sideways (* / #) with a slow swipe (no fling) that starts at x, y:
+// where the phone's cursor is, so with two scrollable panes the one under the cursor moves. The
+// content moves by about the swipe distance, so each press is predictable. Near an edge the swipe
+// is shortened to stay on the screen. dir is where the content goes: 'down' swipes up.
 const SCROLL_FRACTION = 0.3; // of full screen height per press (~60% of one visible half)
+const SWIPE_FRACTION = 0.6; // of screen width per sideways press (enough to change home pages)
 const SCROLL_MS = 500;
+const SWIPE_MS = 300; // sideways: quicker, so a page change (home screen, carousel) snaps over
+const FINGER = { up: [0, 1], down: [0, -1], left: [1, 0], right: [-1, 0] }; // finger direction
 
 app.post('/scroll', async (req, res) => {
-  const dir = req.body && req.body.dir;
-  if (dir !== 'up' && dir !== 'down') return res.status(400).json({ error: 'dir must be up or down' });
+  const b = req.body || {};
+  const finger = FINGER[b.dir];
+  if (!finger) return res.status(400).json({ error: 'dir must be up, down, left or right' });
   const w = frame ? frame.width : 960;
-  const h = frame ? frame.height : 1104;
-  const x = Math.round(w / 2);
-  const top = Math.round(h * (0.5 - SCROLL_FRACTION / 2));
-  const bottom = Math.round(h * (0.5 + SCROLL_FRACTION / 2));
+  const h = frame ? frame.height : 2208;
+  const clamp = (v, max) => Math.min(Math.max(Math.round(v), 1), max - 2);
+  // Without a start point (older pages), start from the middle as before.
+  const x1 = clamp(Number.isFinite(Number(b.x)) ? Number(b.x) : w / 2, w);
+  const y1 = clamp(Number.isFinite(Number(b.y)) ? Number(b.y) : h / 2, h);
+  const x2 = clamp(x1 + finger[0] * w * SWIPE_FRACTION, w);
+  const y2 = clamp(y1 + finger[1] * h * SCROLL_FRACTION, h);
   try {
-    // Scrolling down means dragging the content up, from bottom to top.
-    if (dir === 'down') await device.swipe(x, bottom, x, top, SCROLL_MS);
-    else await device.swipe(x, top, x, bottom, SCROLL_MS);
+    await device.swipe(x1, y1, x2, y2, finger[0] ? SWIPE_MS : SCROLL_MS);
     recaptureSoon();
     res.status(204).end();
   } catch (err) {
@@ -295,10 +302,10 @@ app.post('/text', async (req, res) => {
   }
 });
 
-// Navigation keys from the phone: Call = home, * = back, # = next (swipe from the right), 6 = app switcher.
+// Navigation keys from the phone: Call = home, 6 = app switcher.
 app.post('/key', async (req, res) => {
   const name = req.body && req.body.name;
-  if (!['home', 'back', 'next', 'switcher'].includes(name)) return res.status(400).json({ error: 'unknown key' });
+  if (!['home', 'switcher'].includes(name)) return res.status(400).json({ error: 'unknown key' });
   try {
     await device.key(name);
     recaptureSoon();

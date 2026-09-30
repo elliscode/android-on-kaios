@@ -19,13 +19,13 @@ KaiOS → Caddy (:443, iphone.elliscode.com) → Node server (DEVICE=ios, 127.0.
 
 | Key | iPhone |
 | --- | --- |
-| 2 / 0 | Scroll up / down |
+| 2 / 0 | Scroll up / down, starting at the cursor (so the pane under the cursor scrolls) |
 | 8 | Pan the view |
 | 4 | Open / close Notification Center |
 | 7 | Set the iPhone's location to the flip phone's (XCTest location simulation). Until you do, the iPhone uses its own GPS |
 | Call | Home screen |
-| \* | Back: swipes in from the left edge. iOS has no Back button, so this only works where the app supports the swipe-back gesture. On the home screen it goes one page left (the leftmost is the Today View) |
-| # | Swipes in from the right edge: the next home screen page, or back from the Today View to the home screen |
+| \* | Swipe left-to-right from the cursor: the previous home screen page or carousel item. **Back:** put the cursor at the left edge first (iOS has no Back button; this is its swipe-back gesture, where the app supports it) |
+| # | Swipe right-to-left from the cursor: the next home screen page (e.g. out of the Today View) or carousel item |
 | 6 | App switcher |
 | 9 | Not supported (photo upload is Android-only) |
 
@@ -48,12 +48,15 @@ The text box works as on Android: it opens when the iPhone's keyboard is up, and
 1. Xcode → Settings → Accounts → **+** → Apple ID (a free one works). This creates the signing
    certificate.
 2. `brew install libimobiledevice` (for `iproxy`).
-3. `./scripts/ios/build-wda.sh`. The first run creates `ios/config.env`: fill in `TEAM_ID`
+3. `sudo DevToolsSecurity -enable` (once). Without it, `start-wda.sh` stops at a `Password:`
+   prompt, where macOS asks for permission for Xcode to control the test app. The autostart
+   service can't answer that prompt, so it would get stuck there.
+4. `./scripts/ios/build-wda.sh`. The first run creates `ios/config.env`: fill in `TEAM_ID`
    (instructions inside), then run it again. It downloads WDA, applies the network patch, and
    signs and builds it (a few minutes).
-4. On the iPhone: Settings → General → **VPN & Device Management** → your Apple ID → **Trust**. This
+5. On the iPhone: Settings → General → **VPN & Device Management** → your Apple ID → **Trust**. This
    is needed once, after the first install.
-5. DNS: add an A record for **iphone.elliscode.com** pointing at the same IP as
+6. DNS: add an A record for **iphone.elliscode.com** pointing at the same IP as
    android.elliscode.com. The router's port 443 forward already covers it. Caddy gets the
    certificate by itself once you reload it: `caddy reload --config Caddyfile`.
 
@@ -76,6 +79,8 @@ Logs are in `logs/iphone-*.log`, including the login codes for iphone.elliscode.
 
 Then open `https://iphone.elliscode.com` on the flip phone and log in with the code from the iPhone
 server's log.
+
+Unplugging the phone to use it and plugging it back in: see [PLUG-AND-PLAY-IPHONE.md](PLUG-AND-PLAY-IPHONE.md).
 
 ## Free Apple ID: re-signing every week
 
